@@ -1,7 +1,7 @@
 # Technical Design Document
 ## Superconductivity Critical Temperature Predictor — v0.2.0
 
-**Author**: [Your Name]
+**Author**: John Farrell
 **Domain**: Materials Informatics / Physical Sciences ML
 
 ---
@@ -125,9 +125,9 @@
 
 ---
 
-## 3. Full JD Mapping
+## 3. Component Mapping
 
-| Lila JD Requirement | Implementation | Files |
+| Requirement | Implementation | Files |
 |---|---|---|
 | **End-to-end ML pipelines** | Prefect flow with 6 tasks, retry policies, cron schedule | `src/orchestration/flows.py`, `prefect.yaml` |
 | **Data ingestion** | `DataLoader` + SHA-256 manifest + S3 pull | `src/data/loader.py` |
@@ -154,7 +154,7 @@
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/yourhandle/superconductivity-predictor
+git clone https://github.com/jfarrell8/superconductivity-predictor
 cd superconductivity-predictor
 pip install -e ".[dev]"
 
