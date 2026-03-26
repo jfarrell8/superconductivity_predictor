@@ -25,7 +25,8 @@ data/processed/
 models/*.pkl
 models/*.joblib
 models/*.tar.gz
-mlartifacts/*.pkl
+mlartifacts/
+mlruns/
 # Metadata files are small and committed:
 !models/top_features.json
 !models/model_metadata.json
