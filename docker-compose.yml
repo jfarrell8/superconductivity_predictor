@@ -1,0 +1,162 @@
+# docker-compose.yml
+# Local development stack.
+#
+# Services:
+#   api        — FastAPI inference server
+#   mlflow     — MLflow tracking server + model registry UI
+#   prefect    — Prefect server (flow run UI)
+#   worker     — Prefect worker that executes flow tasks
+#   minio      — S3-compatible local object store (no AWS account needed)
+#
+# Profiles:
+#   (default)          — api only
+#   --profile mlflow   — api + mlflow + minio
+#   --profile prefect  — api + prefect server + worker
+#   --profile full     — everything
+#
+# Usage:
+#   docker compose up                          # API only
+#   docker compose --profile full up           # Full local stack
+#   docker compose --profile mlflow up -d      # Background MLflow
+
+version: "3.9"
+
+x-common-env: &common-env
+  AWS_ACCESS_KEY_ID: minioadmin
+  AWS_SECRET_ACCESS_KEY: minioadmin
+  AWS_DEFAULT_REGION: us-east-1
+  MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+
+services:
+  # ── FastAPI inference service ───────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: runtime
+    image: superconductivity-predictor:local
+    container_name: sc_predictor_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro
+      - ./data:/app/data:ro
+    environment:
+      MODEL_DIR: models
+      MODEL_FILENAME: best_model_top15.pkl
+      REFERENCE_DATA_PATH: data/processed/train_reduced.csv
+      DRIFT_SIGNIFICANCE_LEVEL: "0.05"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ── MLflow tracking server ─────────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.11.1
+    container_name: sc_predictor_mlflow
+    profiles: [mlflow, full]
+    ports:
+      - "5000:5000"
+    environment:
+      <<: *common-env
+    volumes:
+      - mlflow_data:/mlflow
+    depends_on:
+      minio:
+        condition: service_healthy
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --default-artifact-root s3://mlflow-artifacts/
+      --backend-store-uri sqlite:///mlflow/mlflow.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (local S3-compatible store) ──────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: sc_predictor_minio
+    profiles: [mlflow, prefect, full]
+    ports:
+      - "9000:9000"
+      - "9001:9001"     # MinIO console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO bucket initialisation ────────────────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: sc_predictor_minio_init
+    profiles: [mlflow, prefect, full]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/mlflow-artifacts;
+      mc mb --ignore-existing local/sc-predictor-artifacts;
+      mc mb --ignore-existing local/dvc-cache;
+      echo 'MinIO buckets ready.';
+      "
+
+  # ── Prefect server ─────────────────────────────────────────────────────────
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    container_name: sc_predictor_prefect
+    profiles: [prefect, full]
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_API_DATABASE_CONNECTION_URL: sqlite+aiosqlite:////prefect/prefect.db
+    volumes:
+      - prefect_data:/prefect
+    command: prefect server start
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ── Prefect worker ─────────────────────────────────────────────────────────
+  prefect-worker:
+    build:
+      context: .
+      target: runtime
+    container_name: sc_predictor_worker
+    profiles: [prefect, full]
+    environment:
+      <<: *common-env
+      PREFECT_API_URL: http://prefect-server:4200/api
+      MODEL_DIR: models
+    volumes:
+      - ./:/app
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    command: prefect worker start --pool default-agent-pool --type process
+    restart: unless-stopped
+
+volumes:
+  mlflow_data:
+  minio_data:
+  prefect_data:

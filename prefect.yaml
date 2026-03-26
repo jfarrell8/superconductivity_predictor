@@ -1,0 +1,75 @@
+# prefect.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Prefect deployment manifest.
+# Defines how the training_pipeline flow is deployed to a work pool,
+# parameterised, and scheduled.
+#
+# Deploy:  prefect deploy --all
+# Run now: prefect deployment run 'superconductivity-training-pipeline/weekly-retraining'
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: superconductivity-predictor
+prefect-version: "3.*"
+
+# ── Build (Docker image) ──────────────────────────────────────────────────────
+build:
+  - prefect_docker.deployments.steps.build_docker_image:
+      id: build-image
+      requires: prefect-docker>=0.5.0
+      image_name: "{{ $DOCKER_REGISTRY }}/superconductivity-predictor"
+      tag: "{{ $GIT_SHA }}"
+      dockerfile: Dockerfile
+      platform: linux/amd64
+
+# ── Push (GHCR / ECR) ────────────────────────────────────────────────────────
+push:
+  - prefect_docker.deployments.steps.push_docker_image:
+      requires: prefect-docker>=0.5.0
+      image_name: "{{ build-image.image_name }}"
+      tag: "{{ build-image.tag }}"
+
+# ── Pull (how workers get the code) ──────────────────────────────────────────
+pull:
+  - prefect.deployments.steps.git_clone:
+      repository: "https://github.com/{{ $GITHUB_ORG }}/superconductivity-predictor.git"
+      branch: main
+      credentials: "{{ prefect.blocks.github-credentials.default }}"
+
+# ── Deployments ───────────────────────────────────────────────────────────────
+deployments:
+  # ── 1. Scheduled weekly retraining ─────────────────────────────────────────
+  - name: weekly-retraining
+    version: "{{ $GIT_SHA }}"
+    tags: [ml, superconductivity, scheduled]
+    description: "Full retraining pipeline — runs every Sunday at 02:00 UTC."
+    entrypoint: src/orchestration/flows.py:training_pipeline
+    parameters:
+      config_path: configs/experiment_v1.yaml
+      n_trials_override: null          # use the value from YAML (50 trials)
+    work_pool:
+      name: default-agent-pool
+      work_queue_name: default
+      job_variables:
+        image: "{{ build-image.image_name }}:{{ build-image.tag }}"
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          # Secrets injected from Prefect Blocks — never hardcoded
+          AWS_ACCESS_KEY_ID: "{{ prefect.blocks.secret.aws-access-key-id }}"
+          AWS_SECRET_ACCESS_KEY: "{{ prefect.blocks.secret.aws-secret-access-key }}"
+          MLFLOW_TRACKING_URI: "{{ prefect.blocks.secret.mlflow-tracking-uri }}"
+    schedules:
+      - cron: "0 2 * * 0"
+        timezone: "UTC"
+        active: true
+
+  # ── 2. Ad-hoc smoke-test run (fast, 5 trials) ───────────────────────────────
+  - name: smoke-test
+    tags: [ml, superconductivity, manual]
+    description: "Quick 5-trial run for validating pipeline changes pre-merge."
+    entrypoint: src/orchestration/flows.py:training_pipeline
+    parameters:
+      config_path: configs/experiment_v1.yaml
+      n_trials_override: 5
+    work_pool:
+      name: default-agent-pool
+    schedules: []    # manual trigger only

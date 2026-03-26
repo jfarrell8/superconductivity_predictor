@@ -1,0 +1,20 @@
+# .dvc/config
+# ─────────────────────────────────────────────────────────────────────────────
+# DVC configuration.
+# The remote URL should be set via:
+#   dvc remote add -d s3remote s3://your-bucket/dvc-cache
+#   dvc remote modify s3remote region us-east-1
+#
+# This file is committed; credentials are NEVER stored here.
+# DVC picks up AWS credentials from the standard boto3 chain
+# (env vars > ~/.aws > IAM role).
+# ─────────────────────────────────────────────────────────────────────────────
+[core]
+    remote = s3remote
+    autostage = true       # auto dvc add any file written by a dvc run stage
+
+[remote "s3remote"]
+    url = s3://sc-predictor-artifacts/dvc-cache
+    region = us-east-1
+    # For cross-account access, specify a role:
+    # profile = sc-predictor-role

@@ -1,0 +1,17 @@
+[
+  "wtd_entropy_ThermalConductivity",
+  "wtd_range_atomic_radius",
+  "wtd_mean_fie",
+  "wtd_entropy_fie",
+  "wtd_mean_ElectronAffinity",
+  "wtd_mean_ThermalConductivity",
+  "wtd_range_atomic_mass",
+  "wtd_range_Valence",
+  "wtd_range_fie",
+  "wtd_range_ElectronAffinity",
+  "mean_atomic_radius",
+  "mean_fie",
+  "mean_atomic_mass",
+  "mean_Density",
+  "mean_FusionHeat"
+]

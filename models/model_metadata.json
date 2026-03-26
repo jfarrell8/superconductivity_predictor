@@ -1,0 +1,33 @@
+{
+  "model_type": "lightgbm",
+  "best_params": {
+    "model_type": "lightgbm",
+    "n_estimators": 880,
+    "learning_rate": 0.03807791162753276,
+    "num_leaves": 148,
+    "max_depth": 10,
+    "subsample": 0.719788591699043,
+    "colsample_bytree": 0.8760217080337118
+  },
+  "cv_rmse": 0.788481,
+  "n_trials": 5,
+  "n_features": 15,
+  "feature_names": [
+    "wtd_entropy_ThermalConductivity",
+    "wtd_range_atomic_radius",
+    "wtd_mean_fie",
+    "wtd_entropy_fie",
+    "wtd_mean_ElectronAffinity",
+    "wtd_mean_ThermalConductivity",
+    "wtd_range_atomic_mass",
+    "wtd_range_Valence",
+    "wtd_range_fie",
+    "wtd_range_ElectronAffinity",
+    "mean_atomic_radius",
+    "mean_fie",
+    "mean_atomic_mass",
+    "mean_Density",
+    "mean_FusionHeat"
+  ],
+  "train_rows": 17010
+}

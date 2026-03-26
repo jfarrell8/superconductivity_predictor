@@ -1,0 +1,81 @@
+# dvc.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Data Version Control pipeline.
+# Tracks data files and ML artifacts with git-like versioning, backed by S3.
+#
+# Setup:
+#   dvc init
+#   dvc remote add -d s3remote s3://sc-predictor-artifacts/dvc-cache
+#   dvc remote modify s3remote region us-east-1
+#
+# Run the pipeline:
+#   dvc repro              # runs only changed stages
+#   dvc repro --force      # re-runs all stages regardless
+#
+# Push data/artifacts to S3:
+#   dvc push
+#
+# Pull on a new machine:
+#   dvc pull
+#
+# Experiment tracking (lightweight alternative to MLflow):
+#   dvc exp run            # runs pipeline as a DVC experiment
+#   dvc exp show           # compare experiments in a table
+#   dvc exp diff           # diff two experiments
+# ─────────────────────────────────────────────────────────────────────────────
+
+stages:
+  # ── Stage 1: Download raw data ─────────────────────────────────────────────
+  download:
+    cmd: python scripts/download_data.py --output-dir data/raw
+    outs:
+      - data/raw/train.csv:
+          cache: true       # DVC tracks + caches this file
+          persist: true     # keep even if the stage is re-run
+      - data/raw/unique_m.csv:
+          cache: true
+          persist: true
+
+  # ── Stage 2: Feature engineering ──────────────────────────────────────────
+  featurize:
+    cmd: >
+      python -c "
+      import yaml, sys, pandas as pd
+      sys.path.insert(0, '.')
+      from src.data.loader import DataLoader
+      from src.features.engineer import FeatureEngineer
+      cfg = yaml.safe_load(open('configs/experiment_v1.yaml'))
+      loader = DataLoader(cfg['data']['raw_train_path']).load()
+      eng = FeatureEngineer.from_config(cfg)
+      X, y = eng.fit_transform(loader.train)
+      out = X.copy()
+      out[cfg['feature_engineering']['engineered_target_column']] = y.values
+      import pathlib; pathlib.Path('data/processed').mkdir(parents=True, exist_ok=True)
+      out.to_csv(cfg['data']['processed_path'], index=False)
+      "
+    deps:
+      - data/raw/train.csv
+      - src/features/engineer.py
+      - configs/experiment_v1.yaml
+    outs:
+      - data/processed/train_reduced.csv:
+          cache: true
+
+  # ── Stage 3: Train + evaluate ─────────────────────────────────────────────
+  train:
+    cmd: python scripts/run_pipeline.py --config configs/experiment_v1.yaml
+    deps:
+      - data/processed/train_reduced.csv
+      - src/models/trainer.py
+      - src/evaluation/evaluator.py
+      - configs/experiment_v1.yaml
+    outs:
+      - models/best_model_top15.pkl:
+          cache: true
+      - models/best_model.pkl:
+          cache: true
+      - models/top_features.json:
+          cache: false      # small JSON — track in git directly
+    metrics:
+      - models/model_metadata.json:
+          cache: false      # DVC treats this as a metrics file

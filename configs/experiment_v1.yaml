@@ -1,0 +1,119 @@
+# configs/experiment_v1.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+# Experiment configuration for the Superconductivity Critical Temperature
+# Predictor. All pipeline stages are controlled from this file — no magic
+# numbers in source code.
+# ─────────────────────────────────────────────────────────────────────────────
+
+experiment:
+  name: "superconductivity_v1"
+  random_seed: 42
+  mlflow_tracking_uri: "http://localhost:5000"   # override with remote URI in prod
+  mlflow_experiment_name: "superconductivity-tc-prediction"
+
+data:
+  # Local paths (used when cloud storage is disabled)
+  raw_train_path: "data/raw/train.csv"
+  raw_metadata_path: "data/raw/unique_m.csv"
+  processed_path: "data/processed/train_reduced.csv"
+  # S3 paths (used when storage.backend = "s3")
+  s3_raw_train_key: "data/raw/train.csv"
+  s3_processed_key: "data/processed/train_reduced.csv"
+
+feature_engineering:
+  target_column: "critical_temp"
+  engineered_target_column: "critical_temp_boxcox"
+
+  # Binning of quasi-categorical features
+  element_bins:
+    column: "number_of_elements"
+    low_threshold: 1          # merge values <= threshold into low_value
+    low_value: 2
+    high_threshold: 7         # merge values >= threshold into high_value
+    high_value: 6
+
+  valence_bins:
+    column: "range_Valence"
+    merge_zero_to: 1
+    high_threshold: 4
+    high_value: 4
+
+  # Columns to exclude from correlation pruning
+  protected_columns:
+    - "num_elements_simplified"
+
+  # Correlation pruning threshold
+  correlation_threshold: 0.8
+
+  # Drop low-MI dummy columns
+  drop_low_mi_columns:
+    - "rangeValence_1"
+    - "rangeValence_2"
+    - "rangeValence_3"
+    - "rangeValence_4"
+
+preprocessing:
+  # num_elements_simplified is ordinal — do not scale
+  columns_to_skip_scaling:
+    - "num_elements_simplified"
+  test_size: 0.2
+
+modeling:
+  n_trials: 50           # number of Optuna trials
+  cv_folds: 5
+  scoring: "neg_mean_squared_error"
+  n_jobs: -1
+
+  # Model search space — models listed here are included in HPO
+  search_space:
+    - "linear"
+    - "lightgbm"
+    - "xgboost"
+    - "random_forest"
+
+evaluation:
+  # Feature reduction sweep
+  feature_counts: [28, 20, 15, 12, 10, 8, 5]
+  final_top_k_features: 15
+
+artifacts:
+  model_dir: "models/"
+  model_filename: "best_model.pkl"
+  study_filename: "optuna_study.pkl"
+  top_k_model_filename: "best_model_top15.pkl"
+  scaler_filename: "scaler.pkl"
+  feature_list_filename: "top_features.json"
+
+# ── Cloud storage ─────────────────────────────────────────────────────────────
+storage:
+  backend: "local"            # "local" | "s3"
+  s3_bucket: "sc-predictor-artifacts"
+  s3_prefix: "superconductivity_v1"
+  aws_region: "us-east-1"
+
+# ── MLflow ────────────────────────────────────────────────────────────────────
+mlflow:
+  auto_log_params: true
+  auto_log_metrics: true
+  log_model: true             # log the fitted model as an MLflow artifact
+  registered_model_name: "superconductivity-tc-predictor"
+  # Lifecycle stages: None → Staging → Production → Archived
+  promote_to_staging_on_improvement: true
+  staging_rmse_threshold: 1.0  # promote only if CV RMSE < this value
+
+# ── DVC (Data Version Control) ────────────────────────────────────────────────
+dvc:
+  remote_name: "s3remote"
+  remote_url: "s3://sc-predictor-artifacts/dvc-cache"
+
+# ── Prefect orchestration ─────────────────────────────────────────────────────
+prefect:
+  work_pool: "default-agent-pool"
+  # Cron schedule for automated retraining (weekly on Sundays at 02:00 UTC)
+  cron_schedule: "0 2 * * 0"
+  # Flow concurrency limit
+  concurrency_limit: 1
+
+monitoring:
+  drift_significance_level: 0.05    # KS-test p-value threshold
+  reference_data_path: "data/processed/train_reduced.csv"

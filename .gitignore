@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables — never commit
+.env
+
+# Data — tracked by DVC, not git
+data/raw/
+data/processed/
+# DVC pointer files ARE committed:
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Trained model artifacts — tracked by DVC
+models/*.pkl
+models/*.joblib
+models/*.tar.gz
+# Metadata files are small and committed:
+!models/top_features.json
+!models/model_metadata.json
+
+# Test / coverage
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
+
+# Prediction logs — keep the directory, not the content
+logs/*.jsonl
+logs/*.jsonl.*
+!logs/.gitkeep
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MLflow local runs (use remote tracking server instead)
+mlruns/
+
+# Prefect local storage
+.prefect/
+
+# Terraform — state files contain secrets and should never be committed
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars          # may contain sensitive variable values
+.terraform.lock.hcl   # DO commit this (locks provider versions)
+!infra/**/.terraform.lock.hcl
+
+# DVC internal files (these are managed by DVC, not hand-edited)
+/tmp

@@ -1,0 +1,46 @@
+# .github/workflows/build.yml
+# Builds and pushes Docker image to Amazon ECR on merge to main.
+# Uses OIDC federation — no AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY stored.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write    # required for OIDC JWT
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push to ECR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/superconductivity-predictor:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/superconductivity-predictor:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

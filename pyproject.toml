@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superconductivity-predictor"
+version = "0.1.0"
+description = "End-to-end ML pipeline for predicting superconductor critical temperatures"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Your Name", email = "you@example.com" }]
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "xgboost",
+    "lightgbm",
+    "optuna",
+    "shap",
+    "joblib",
+    "pydantic",
+    "pydantic-settings",
+    "fastapi",
+    "uvicorn[standard]",
+    "prefect",
+    "mlflow",
+    "boto3",
+    "s3fs",
+    "fsspec",
+    "pyyaml",
+    "python-dotenv",
+    "loguru",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
+    "mypy",
+    "pandas-stubs",
+    "types-PyYAML",
+]
+
+[project.scripts]
+run-pipeline = "scripts.run_pipeline:main"
+run-flow     = "scripts.run_flow:main"
+download-data = "scripts.download_data:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "scripts*"]
+
+[tool.setuptools.package-data]
+"src" = ["py.typed"]   # PEP 561 — signals this package ships inline types
+
+# ── Ruff (linter + formatter) ──────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "ANN", "B", "SIM"]
+ignore = ["ANN101", "ANN102"]
+
+# ── mypy ───────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+
+# ── pytest ─────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"
+asyncio_mode = "auto"

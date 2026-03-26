@@ -1,0 +1,180 @@
+# .github/workflows/deploy.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Deployment pipeline: triggered on merge to main after tests pass.
+#
+# Steps:
+#   1. Authenticate to AWS via OIDC (no stored secrets)
+#   2. Build + push Docker image to ECR
+#   3. Upload model artifacts to S3 (if present)
+#   4. Package SageMaker inference bundle (model.tar.gz)
+#   5. Update the SageMaker endpoint to the new model version
+#   6. Run a smoke test against the live endpoint
+#
+# IAM role trust policy must allow:
+#   token.actions.githubusercontent.com:sub = repo:ORG/REPO:ref:refs/heads/main
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:    # allow manual triggers from the GitHub UI
+
+env:
+  AWS_REGION:     us-east-1
+  ECR_REPOSITORY: superconductivity-predictor
+  SM_ENDPOINT:    sc-predictor-prod-endpoint
+
+jobs:
+  # ── Job 1: Run tests first (gates deployment) ─────────────────────────────
+  test:
+    name: Test gate
+    uses: ./.github/workflows/test.yml
+
+  # ── Job 2: Build and push Docker image ────────────────────────────────────
+  build-and-push:
+    name: Build & Push to ECR
+    runs-on: ubuntu-latest
+    needs: [test]
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+
+    permissions:
+      id-token: write    # required for OIDC
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC — no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker build -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          # Also tag as latest
+          docker tag "$IMAGE_URI" "$REGISTRY/$ECR_REPOSITORY:latest"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image_uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+  # ── Job 3: Package + upload model artifacts to S3 ─────────────────────────
+  upload-artifacts:
+    name: Upload Model Artifacts to S3
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check for model artifacts
+        id: check-artifacts
+        run: |
+          if [ -f "models/best_model_top15.pkl" ] && [ -f "models/top_features.json" ]; then
+            echo "artifacts_exist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "artifacts_exist=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No model artifacts found. Skipping artifact upload."
+          fi
+
+      - name: Package SageMaker inference bundle
+        if: steps.check-artifacts.outputs.artifacts_exist == 'true'
+        run: |
+          mkdir -p /tmp/sm_model
+          cp models/best_model_top15.pkl /tmp/sm_model/
+          cp models/top_features.json /tmp/sm_model/
+          cp src/api/sagemaker/inference.py /tmp/sm_model/
+          tar -czf models/best_model_top15.tar.gz -C /tmp/sm_model .
+
+      - name: Upload artifacts to S3
+        if: steps.check-artifacts.outputs.artifacts_exist == 'true'
+        run: |
+          aws s3 cp models/best_model_top15.tar.gz \
+            s3://${{ secrets.ARTIFACTS_BUCKET }}/models/best_model_top15.tar.gz
+          aws s3 cp models/top_features.json \
+            s3://${{ secrets.ARTIFACTS_BUCKET }}/models/top_features.json
+          aws s3 cp models/model_metadata.json \
+            s3://${{ secrets.ARTIFACTS_BUCKET }}/models/model_metadata.json \
+            || echo "No metadata file found, skipping."
+          echo "Artifacts uploaded to s3://${{ secrets.ARTIFACTS_BUCKET }}/models/"
+
+  # ── Job 4: Update SageMaker endpoint ──────────────────────────────────────
+  update-endpoint:
+    name: Update SageMaker Endpoint
+    runs-on: ubuntu-latest
+    needs: [build-and-push, upload-artifacts]
+    environment: production    # requires manual approval in GitHub Environments
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CICD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create new SageMaker endpoint config
+        id: new-config
+        run: |
+          CONFIG_NAME="sc-predictor-prod-config-${{ github.sha }}"
+
+          aws sagemaker create-endpoint-config \
+            --endpoint-config-name "$CONFIG_NAME" \
+            --production-variants \
+              "VariantName=primary,\
+              ModelName=sc-predictor-prod-predictor,\
+              InitialInstanceCount=2,\
+              InstanceType=ml.m5.xlarge,\
+              InitialVariantWeight=1.0"
+
+          echo "config_name=$CONFIG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Update endpoint (zero-downtime blue/green)
+        run: |
+          aws sagemaker update-endpoint \
+            --endpoint-name "$SM_ENDPOINT" \
+            --endpoint-config-name "${{ steps.new-config.outputs.config_name }}"
+
+          echo "Waiting for endpoint update to complete..."
+          aws sagemaker wait endpoint-in-service \
+            --endpoint-name "$SM_ENDPOINT"
+          echo "Endpoint updated successfully."
+
+      - name: Smoke test live endpoint
+        run: |
+          ENDPOINT_URL="https://runtime.sagemaker.${{ env.AWS_REGION }}.amazonaws.com/endpoints/$SM_ENDPOINT/invocations"
+          RESPONSE=$(aws sagemaker-runtime invoke-endpoint \
+            --endpoint-name "$SM_ENDPOINT" \
+            --content-type "application/json" \
+            --body '{"features":{"mean_atomic_mass":88.5,"wtd_mean_atomic_mass":91.2,"gmean_atomic_mass":85.3,"mean_fie":6.2,"mean_atomic_radius":1.55,"wtd_mean_atomic_radius":1.48,"mean_Density":5400.0,"wtd_mean_Density":5100.0,"mean_ElectronAffinity":1.2,"wtd_mean_ElectronAffinity":1.1,"mean_FusionHeat":14.5,"wtd_mean_FusionHeat":13.8,"mean_ThermalConductivity":12.0,"wtd_mean_ThermalConductivity":11.5,"num_elements_simplified":3}}' \
+            /dev/stdout 2>&1)
+          echo "Smoke test response: $RESPONSE"
+          # Fail if response doesn't contain "predictions"
+          echo "$RESPONSE" | grep -q "predictions" || (echo "Smoke test FAILED" && exit 1)
+          echo "Smoke test passed."

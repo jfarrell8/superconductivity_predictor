@@ -1,0 +1,37 @@
+# .github/workflows/lint.yml
+# Fast linting gate — runs on every PR before tests.
+# Keeps the feedback loop tight: developers see style errors in <30s.
+
+name: Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Ruff + mypy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff (lint)
+        run: ruff check src/ tests/ --output-format=github
+
+      - name: Ruff (format check)
+        run: ruff format --check src/ tests/
+
+      - name: mypy (type check)
+        run: mypy src/
