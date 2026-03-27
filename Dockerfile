@@ -20,7 +20,7 @@ RUN python -m venv /opt/venv && \
 # ─── Stage 2: Runtime ────────────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
 
-LABEL org.opencontainers.image.source="https://github.com/yourhandle/superconductivity-predictor"
+LABEL org.opencontainers.image.source="https://github.com/jfarrell8/superconductivity-predictor"
 LABEL org.opencontainers.image.description="Superconductivity Critical Temperature Predictor API"
 
 # libgomp1 is required at runtime by LightGBM
