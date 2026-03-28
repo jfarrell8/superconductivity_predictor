@@ -34,6 +34,7 @@ import pandas as pd
 import yaml
 from loguru import logger
 from sklearn.model_selection import train_test_split
+import json
 
 # Support running from project root without `pip install -e .`
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -399,6 +400,14 @@ def training_pipeline(
     raw_df, manifest = ingest_data(cfg)
     X_all, y_all = engineer_features(raw_df, cfg)
     X_train, X_test, y_train, y_test = split_data(X_all, y_all, cfg)
+
+    # Compute and save training medians for inference-time imputation
+    medians = X_train.median().to_dict()
+    Path(cfg["artifacts"]["model_dir"]).mkdir(parents=True, exist_ok=True)
+    (Path(cfg["artifacts"]["model_dir"]) / "feature_medians.json").write_text(
+        json.dumps(medians, indent=2)
+    )
+
     trainer = train_model(X_train, y_train, cfg, n_trials_override)
     metrics, top_features = evaluate_model(trainer, X_train, X_test, y_train, y_test, cfg)
     persist_artifacts(trainer, manifest, top_features, cfg)

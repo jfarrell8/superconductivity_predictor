@@ -20,6 +20,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 from loguru import logger
+import json
 from sklearn.model_selection import train_test_split
 
 # Add project root to path so `src` is importable without installation
@@ -91,6 +92,13 @@ def main() -> None:
     logger.info(
         f"Split: {len(X_train):,} train / {len(X_test):,} test  "
         f"({int((1-test_size)*100)}% / {int(test_size*100)}%)"
+    )
+
+    # Compute and save training medians for inference-time imputation
+    medians = X_train.median().to_dict()
+    Path(cfg["artifacts"]["model_dir"]).mkdir(parents=True, exist_ok=True)
+    (Path(cfg["artifacts"]["model_dir"]) / "feature_medians.json").write_text(
+        json.dumps(medians, indent=2)
     )
 
     # ── 4. Hyperparameter optimisation ───────────────────────────────────────

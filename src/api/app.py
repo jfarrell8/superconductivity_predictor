@@ -58,6 +58,7 @@ class AppState:
     top_features: list[str] = []
     drift_monitor: DriftMonitor | None = None
     prediction_logger: PredictionLogger | None = None
+    feature_medians: dict[str, float] = {}
 
 
 app_state = AppState()
@@ -80,6 +81,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             f"Model loaded: {app_state.metadata.model_type} | "
             f"{app_state.metadata.n_features} features"
         )
+
+        medians_path = Path(settings.model_dir) / "feature_medians.json"
+        if medians_path.exists():
+            app_state.feature_medians = json.loads(medians_path.read_text())
+            logger.info("Feature medians loaded for imputation.")
+        else:
+            logger.warning("feature_medians.json not found — missing features will cause errors.")
+
     except FileNotFoundError as exc:
         logger.error(f"Artifact not found: {exc}")
         raise RuntimeError(
@@ -173,6 +182,14 @@ class PredictionRequest(BaseModel):
         return self
 
 
+# class PredictionResponse(BaseModel):
+#     predicted_critical_temp_boxcox: float = Field(
+#         ..., description="Prediction in Box-Cox transformed scale"
+#     )
+#     request_id: str = Field(..., description="Unique ID for tracing this prediction")
+#     model_type: str
+#     n_features_used: int
+
 class PredictionResponse(BaseModel):
     predicted_critical_temp_boxcox: float = Field(
         ..., description="Prediction in Box-Cox transformed scale"
@@ -180,6 +197,10 @@ class PredictionResponse(BaseModel):
     request_id: str = Field(..., description="Unique ID for tracing this prediction")
     model_type: str
     n_features_used: int
+    imputed_features: list[str] = Field(
+        default=[],
+        description="Features that were missing and filled with training medians."
+    )
 
 
 class BatchPredictionRequest(BaseModel):
@@ -252,14 +273,62 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
     `scipy.special.inv_boxcox(value, lambda)` to convert back to Kelvin.
     Every request is logged to the JSONL prediction log for drift analysis.
     """
+    # if app_state.model is None:
+    #     raise HTTPException(
+    #         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+    #         detail="Model not loaded.",
+    #     )
+    # try:
+    #     features = app_state.top_features or list(request.features.keys())
+    #     X = pd.DataFrame([request.features])[features]
+    #     prediction = float(app_state.model.predict(X)[0])
+    # except Exception as exc:
+    #     logger.error(f"Prediction error: {exc}")
+    #     raise HTTPException(
+    #         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+    #         detail=str(exc),
+    #     ) from exc
+
+    # # Log every prediction for offline drift analysis
+    # model_type = app_state.metadata.model_type if app_state.metadata else "unknown"
+    # request_id = "unlogged"
+    # if app_state.prediction_logger is not None:
+    #     request_id = app_state.prediction_logger.log(
+    #         features=request.features,
+    #         prediction=prediction,
+    #         model_type=model_type,
+    #         n_features=len(features),
+    #     )
+
+    # return PredictionResponse(
+    #     predicted_critical_temp_boxcox=prediction,
+    #     request_id=request_id,
+    #     model_type=model_type,
+    #     n_features_used=len(features),
+    # )
+
     if app_state.model is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded.",
-        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+    features = app_state.top_features or list(request.features.keys())
+
+    # Fill missing features with training medians
+    imputed = {}
+    imputed_features = []
+    for feat in features:
+        if feat in request.features:
+            imputed[feat] = request.features[feat]
+        elif feat in app_state.feature_medians:
+            imputed[feat] = app_state.feature_medians[feat]
+            imputed_features.append(feat)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Feature '{feat}' is missing and no training median is available.",
+            )
+
     try:
-        features = app_state.top_features or list(request.features.keys())
-        X = pd.DataFrame([request.features])[features]
+        X = pd.DataFrame([imputed])[features]
         prediction = float(app_state.model.predict(X)[0])
     except Exception as exc:
         logger.error(f"Prediction error: {exc}")
@@ -268,12 +337,11 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
             detail=str(exc),
         ) from exc
 
-    # Log every prediction for offline drift analysis
     model_type = app_state.metadata.model_type if app_state.metadata else "unknown"
     request_id = "unlogged"
     if app_state.prediction_logger is not None:
         request_id = app_state.prediction_logger.log(
-            features=request.features,
+            features=imputed,
             prediction=prediction,
             model_type=model_type,
             n_features=len(features),
@@ -284,6 +352,7 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
         request_id=request_id,
         model_type=model_type,
         n_features_used=len(features),
+        imputed_features=imputed_features,
     )
 
 
