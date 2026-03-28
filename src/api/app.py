@@ -147,48 +147,13 @@ app.add_middleware(
 class PredictionRequest(BaseModel):
     """
     Feature values for a single superconductor sample.
-
-    Only the top-15 selected features are required for inference.
-    Feature names match the column names in the processed dataset.
+    Missing features will be imputed with training set medians.
+    Call GET /model/info to see the feature names your model expects.
     """
-
     features: dict[str, float] = Field(
         ...,
-        example={
-            "mean_atomic_mass": 88.5,
-            "wtd_mean_atomic_mass": 91.2,
-            "gmean_atomic_mass": 85.3,
-            "mean_fie": 6.2,
-            "mean_atomic_radius": 1.55,
-            "wtd_mean_atomic_radius": 1.48,
-            "mean_Density": 5400.0,
-            "wtd_mean_Density": 5100.0,
-            "mean_ElectronAffinity": 1.2,
-            "wtd_mean_ElectronAffinity": 1.1,
-            "mean_FusionHeat": 14.5,
-            "wtd_mean_FusionHeat": 13.8,
-            "mean_ThermalConductivity": 12.0,
-            "wtd_mean_ThermalConductivity": 11.5,
-            "num_elements_simplified": 3,
-        },
+        description="See GET /model/info for required feature names.",
     )
-
-    @model_validator(mode="after")
-    def check_required_features(self) -> "PredictionRequest":
-        if app_state.top_features:
-            missing = set(app_state.top_features) - set(self.features.keys())
-            if missing:
-                raise ValueError(f"Missing required features: {sorted(missing)}")
-        return self
-
-
-# class PredictionResponse(BaseModel):
-#     predicted_critical_temp_boxcox: float = Field(
-#         ..., description="Prediction in Box-Cox transformed scale"
-#     )
-#     request_id: str = Field(..., description="Unique ID for tracing this prediction")
-#     model_type: str
-#     n_features_used: int
 
 class PredictionResponse(BaseModel):
     predicted_critical_temp_boxcox: float = Field(
@@ -273,39 +238,6 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
     `scipy.special.inv_boxcox(value, lambda)` to convert back to Kelvin.
     Every request is logged to the JSONL prediction log for drift analysis.
     """
-    # if app_state.model is None:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-    #         detail="Model not loaded.",
-    #     )
-    # try:
-    #     features = app_state.top_features or list(request.features.keys())
-    #     X = pd.DataFrame([request.features])[features]
-    #     prediction = float(app_state.model.predict(X)[0])
-    # except Exception as exc:
-    #     logger.error(f"Prediction error: {exc}")
-    #     raise HTTPException(
-    #         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-    #         detail=str(exc),
-    #     ) from exc
-
-    # # Log every prediction for offline drift analysis
-    # model_type = app_state.metadata.model_type if app_state.metadata else "unknown"
-    # request_id = "unlogged"
-    # if app_state.prediction_logger is not None:
-    #     request_id = app_state.prediction_logger.log(
-    #         features=request.features,
-    #         prediction=prediction,
-    #         model_type=model_type,
-    #         n_features=len(features),
-    #     )
-
-    # return PredictionResponse(
-    #     predicted_critical_temp_boxcox=prediction,
-    #     request_id=request_id,
-    #     model_type=model_type,
-    #     n_features_used=len(features),
-    # )
 
     if app_state.model is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
@@ -391,6 +323,113 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         n_samples=len(predictions),
         model_type=model_type,
     )
+
+FEATURE_DESCRIPTIONS = {
+    "mean_atomic_mass": "Average atomic mass of elements in the compound (g/mol)",
+    "wtd_mean_atomic_mass": "Composition-weighted mean atomic mass (g/mol)",
+    "gmean_atomic_mass": "Geometric mean of atomic masses",
+    "range_atomic_mass": "Max minus min atomic mass across elements",
+    "mean_fie": "Mean first ionization energy (eV)",
+    "wtd_mean_fie": "Weighted mean first ionization energy (eV)",
+    "range_fie": "Range of first ionization energies across elements",
+    "wtd_range_fie": "Weighted range of first ionization energies",
+    "entropy_fie": "Entropy of first ionization energy distribution",
+    "wtd_entropy_fie": "Weighted entropy of first ionization energies",
+    "mean_atomic_radius": "Mean atomic radius of elements (Angstrom)",
+    "wtd_mean_atomic_radius": "Weighted mean atomic radius (Angstrom)",
+    "wtd_range_atomic_radius": "Weighted range of atomic radii",
+    "mean_Density": "Mean elemental density (kg/m3)",
+    "wtd_mean_Density": "Weighted mean elemental density (kg/m3)",
+    "range_Density": "Range of elemental densities",
+    "mean_ElectronAffinity": "Mean electron affinity of elements (eV)",
+    "wtd_mean_ElectronAffinity": "Weighted mean electron affinity (eV)",
+    "wtd_range_ElectronAffinity": "Weighted range of electron affinities",
+    "range_ElectronAffinity": "Range of electron affinities across elements",
+    "mean_FusionHeat": "Mean heat of fusion of elements (kJ/mol)",
+    "wtd_mean_FusionHeat": "Weighted mean heat of fusion (kJ/mol)",
+    "range_FusionHeat": "Range of fusion heats across elements",
+    "mean_ThermalConductivity": "Mean thermal conductivity (W/mK)",
+    "wtd_mean_ThermalConductivity": "Weighted mean thermal conductivity (W/mK)",
+    "range_ThermalConductivity": "Range of thermal conductivities",
+    "entropy_ThermalConductivity": "Entropy of thermal conductivity distribution",
+    "gmean_ThermalConductivity": "Geometric mean of thermal conductivities",
+    "mean_Valence": "Mean number of valence electrons",
+    "wtd_range_Valence": "Weighted range of valence electron counts",
+    "wtd_range_atomic_mass": "Weighted range of atomic masses",
+    "entropy_atomic_mass": "Entropy of atomic mass distribution",
+    "num_elements_simplified": "Number of distinct elements (binned: 2-6)",
+}
+
+@app.get("/features", tags=["Inference"])
+async def feature_info() -> dict:
+    """
+    Returns metadata for each feature the model expects:
+    description, median, min, max, and whether it will be
+    auto-imputed if missing.
+    """
+    if not app_state.top_features:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model not loaded."
+        )
+
+    # Load the processed training data to compute ranges
+    ref_path = Path(settings.reference_data_path)
+    if ref_path.exists():
+        ref_df = pd.read_csv(ref_path)
+        has_ranges = True
+    else:
+        has_ranges = False
+
+    feature_info = {}
+    for feat in app_state.top_features:
+        info = {
+            "description": FEATURE_DESCRIPTIONS.get(feat, feat),
+            "median": round(app_state.feature_medians.get(feat, 0.0), 4),
+            "auto_imputed_if_missing": True,
+        }
+        if has_ranges and feat in ref_df.columns:
+            info["min"] = round(float(ref_df[feat].min()), 4)
+            info["max"] = round(float(ref_df[feat].max()), 4)
+            info["p25"] = round(float(ref_df[feat].quantile(0.25)), 4)
+            info["p75"] = round(float(ref_df[feat].quantile(0.75)), 4)
+        feature_info[feat] = info
+
+    return {
+        "model_type": app_state.metadata.model_type if app_state.metadata else "unknown",
+        "n_features": len(app_state.top_features),
+        "features": feature_info,
+    }
+
+@app.get("/predict/example", tags=["Inference"])
+async def predict_example() -> dict:
+    """
+    Returns a ready-to-use example prediction request built from the
+    current model's features and their training set median values.
+    Copy the 'features' object and POST it to /predict as-is, or
+    adjust individual values before submitting.
+    """
+    if not app_state.top_features:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Model not loaded."
+        )
+
+    example_features = {
+        feat: round(app_state.feature_medians.get(feat, 0.0), 4)
+        for feat in app_state.top_features
+    }
+
+    return {
+        "instructions": (
+            "POST the 'features' object below to /predict. "
+            "All values shown are training set medians — a reasonable "
+            "starting point. You may omit any feature and it will be "
+            "filled with its median automatically."
+        ),
+        "feature_count": len(app_state.top_features),
+        "features": example_features,
+    }
 
 
 @app.get("/monitoring/drift", tags=["Monitoring"])
