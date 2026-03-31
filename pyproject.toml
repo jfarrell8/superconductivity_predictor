@@ -45,6 +45,7 @@ dev = [
     "mypy",
     "pandas-stubs",
     "types-PyYAML",
+    "moto",
 ]
 
 [project.scripts]
