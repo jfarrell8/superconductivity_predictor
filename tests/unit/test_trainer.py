@@ -204,12 +204,11 @@ class TestMLflowIntegration:
             mlflow_cfg={"auto_log_params": True, "log_model": False},
         )
         with patch("mlflow.start_run") as mock_run, \
-             patch("mlflow.log_params"), \
-             patch("mlflow.log_metric"), \
-             patch("mlflow.log_metrics"), \
-             patch("mlflow.set_tags"), \
-             patch("mlflow.set_tag"):
-            # Make the context manager return a mock run object
+            patch("mlflow.log_params"), \
+            patch("mlflow.log_metric"), \
+            patch("mlflow.log_metrics"), \
+            patch("mlflow.set_tags"), \
+            patch("mlflow.set_tag"):
             mock_ctx = MagicMock()
             mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
             mock_ctx.__exit__ = MagicMock(return_value=False)
@@ -217,7 +216,17 @@ class TestMLflowIntegration:
             mock_run.return_value = mock_ctx
 
             trainer.fit(X, y)
-            mock_run.assert_called_once()
+
+            # Called once for the parent run + once per trial (n_trials=2)
+            assert mock_run.call_count == 3
+
+            # Verify the parent run was called without nested=True
+            first_call_kwargs = mock_run.call_args_list[0][1]
+            assert "nested" not in first_call_kwargs
+
+            # Verify the trial runs were called with nested=True
+            second_call_kwargs = mock_run.call_args_list[1][1]
+            assert second_call_kwargs.get("nested") is True
 
     def test_promote_if_better_skips_when_no_run_id(self) -> None:
         trainer = ModelTrainer(
