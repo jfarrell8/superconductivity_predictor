@@ -5,8 +5,8 @@
 > training, MLflow experiment tracking, DVC data versioning, and SageMaker
 > deployment, all provisioned with Terraform.
 
-[![Tests](https://github.com/yourhandle/superconductivity-predictor/actions/workflows/test.yml/badge.svg)](https://github.com/yourhandle/superconductivity-predictor/actions/workflows/test.yml)
-[![Lint](https://github.com/yourhandle/superconductivity-predictor/actions/workflows/lint.yml/badge.svg)](https://github.com/yourhandle/superconductivity-predictor/actions/workflows/lint.yml)
+[![Tests](https://github.com/jfarrell8/superconductivity-predictor/actions/workflows/test.yml/badge.svg)](https://github.com/jfarrell8/superconductivity-predictor/actions/workflows/test.yml)
+[![Lint](https://github.com/jfarrell8/superconductivity-predictor/actions/workflows/lint.yml/badge.svg)](https://github.com/jfarrell8/superconductivity-predictor/actions/workflows/lint.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 
 ---
