@@ -70,6 +70,14 @@ def _configure_mlflow_if_enabled(cfg: dict) -> None:
     logger.info(f"MLflow tracking: {tracking_uri} | experiment: {exp_name}")
 
 
+def _get_logger():
+    """Get Prefect run logger if available, fall back to loguru."""
+    try:
+        return get_run_logger()
+    except Exception:
+        return logger
+
+
 # ─── Tasks ────────────────────────────────────────────────────────────────────
 
 
@@ -82,7 +90,7 @@ def _configure_mlflow_if_enabled(cfg: dict) -> None:
     cache_expiration=None,
 )
 def ingest_data(cfg: dict) -> tuple[pd.DataFrame, DataManifest]:
-    log = get_run_logger()
+    log = _get_logger()
     storage = StorageBackend.from_config(cfg)
 
     # If S3 backend: pull the raw file down before DataLoader reads it
@@ -115,7 +123,7 @@ def ingest_data(cfg: dict) -> tuple[pd.DataFrame, DataManifest]:
 def engineer_features(
     raw_df: pd.DataFrame, cfg: dict
 ) -> tuple[pd.DataFrame, pd.Series]:
-    log = get_run_logger()
+    log = _get_logger()
     engineer = FeatureEngineer.from_config(cfg)
     X, y = engineer.fit_transform(raw_df)
 
@@ -147,7 +155,7 @@ def split_data(
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=seed, shuffle=True
     )
-    get_run_logger().info(
+    _get_logger().info(
         f"Split: {len(X_train):,} train / {len(X_test):,} test"
     )
     return X_train, X_test, y_train, y_test
@@ -166,7 +174,7 @@ def train_model(
     cfg: dict,
     n_trials_override: int | None = None,
 ) -> ModelTrainer:
-    log = get_run_logger()
+    log = _get_logger()
     n_trials = n_trials_override or cfg["modeling"]["n_trials"]
     log.info(f"Starting HPO: {n_trials} trials across {cfg['modeling']['search_space']}")
 
@@ -196,7 +204,7 @@ def evaluate_model(
     y_test: pd.Series,
     cfg: dict,
 ) -> tuple[RegressionMetrics, list[str]]:
-    log = get_run_logger()
+    log = _get_logger()
     eval_cfg = cfg["evaluation"]
 
     evaluator = ModelEvaluator(trainer.best_model)
@@ -259,7 +267,7 @@ def persist_artifacts(
     top_features: list[str],
     cfg: dict,
 ) -> None:
-    log = get_run_logger()
+    log = _get_logger()
     storage = StorageBackend.from_config(cfg)
     model_dir = Path(cfg["artifacts"]["model_dir"])
     is_s3 = cfg.get("storage", {}).get("backend") == "s3"

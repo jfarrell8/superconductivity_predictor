@@ -7,7 +7,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
+import os
+import logging
 
 @pytest.fixture(scope="session")
 def synthetic_train_df() -> pd.DataFrame:
@@ -39,3 +40,24 @@ def small_feature_df() -> pd.DataFrame:
         {f"feature_{i}": rng.normal(size=n) for i in range(10)}
         | {"target": rng.normal(size=n)}
     )
+
+
+@pytest.fixture(autouse=True, scope="session")
+def disable_prefect_server() -> None:
+    """Prevent Prefect from trying to connect to a server during tests."""
+    original = os.environ.get("PREFECT_API_URL")
+    os.environ["PREFECT_API_URL"] = ""
+    yield
+    if original is None:
+        os.environ.pop("PREFECT_API_URL", None)
+    else:
+        os.environ["PREFECT_API_URL"] = original
+
+
+@pytest.fixture(autouse=True, scope="session")
+def suppress_prefect_shutdown_noise() -> None:
+    """Suppress Prefect's noisy shutdown logging after tests complete."""
+    yield
+    # Silence Prefect's internal loggers during teardown
+    logging.getLogger("prefect.server").setLevel(logging.CRITICAL)
+    logging.getLogger("prefect").setLevel(logging.CRITICAL)
