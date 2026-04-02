@@ -255,7 +255,7 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
             imputed_features.append(feat)
         else:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Feature '{feat}' is missing and no training median is available.",
             )
 
@@ -265,7 +265,7 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
     except Exception as exc:
         logger.error(f"Prediction error: {exc}")
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
 
@@ -302,7 +302,7 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         predictions = app_state.model.predict(X).tolist()
     except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
     model_type = app_state.metadata.model_type if app_state.metadata else "unknown"
@@ -451,7 +451,7 @@ async def drift_report(data_path: str | None = None) -> dict[str, Any]:
             new_X = new_df[app_state.top_features]
         except Exception as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
             ) from exc
     else:
         new_X = app_state.drift_monitor.reference_data
