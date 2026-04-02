@@ -285,41 +285,6 @@ def persist_artifacts(
 
     trainer.promote_if_better(cv_rmse=trainer.metadata.cv_rmse)
 
-# @task(
-#     name="persist-artifacts",
-#     description="Save model, study, metadata, and feature list to local disk and S3.",
-#     retries=3,
-#     retry_delay_seconds=15,
-# )
-# def persist_artifacts(
-#     trainer: ModelTrainer,
-#     manifest: DataManifest,
-#     top_features: list[str],
-#     cfg: dict,
-# ) -> None:
-#     log = get_run_logger()
-#     storage = StorageBackend.from_config(cfg)
-#     model_dir = Path(cfg["artifacts"]["model_dir"])
-
-#     registry = ModelRegistry(model_dir=model_dir, storage=storage)
-#     registry.save(
-#         trainer,
-#         top_features=top_features,
-#         filename=cfg["artifacts"]["top_k_model_filename"],
-#     )
-
-#     import joblib
-#     full_model_path = model_dir / cfg["artifacts"]["model_filename"]
-#     joblib.dump(trainer.best_model, full_model_path)
-#     if storage is not None and cfg.get("storage", {}).get("backend") == "s3":
-#         storage.upload(full_model_path, f"models/{cfg['artifacts']['model_filename']}")
-
-#     manifest.save(model_dir / "data_manifest.json")
-#     log.info(f"All artifacts persisted. model_dir={model_dir}")
-
-#     # Conditionally promote to MLflow Staging
-#     trainer.promote_if_better(cv_rmse=trainer.metadata.cv_rmse)
-
 
 # ─── Markdown artifact helper ─────────────────────────────────────────────────
 
