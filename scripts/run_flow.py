@@ -123,65 +123,25 @@ def main() -> None:
             print("\n── Pipeline complete ──────────────────────────────────────")
             for k, v in result.items():
                 print(f"  {k}: {v}")
+    # finally:
+    #     # Clean up the server process when the flow finishes
+    #     if server_process is not None:
+    #         logger.info("Shutting down local Prefect server...")
+    #         server_process.terminate()
+    #         server_process.wait()
+
     finally:
         # Clean up the server process when the flow finishes
         if server_process is not None:
             logger.info("Shutting down local Prefect server...")
+            import time
+            time.sleep(3)
             server_process.terminate()
-            server_process.wait()
-
-# def main() -> None:
-#     parser = argparse.ArgumentParser(
-#         description="Run the Prefect training pipeline flow."
-#     )
-#     parser.add_argument(
-#         "--config",
-#         type=str,
-#         default="configs/experiment_v1.yaml",
-#         help="Path to YAML experiment config.",
-#     )
-#     parser.add_argument(
-#         "--trials",
-#         type=int,
-#         default=None,
-#         help="Override n_trials from config for quick runs.",
-#     )
-#     parser.add_argument(
-#         "--deploy",
-#         action="store_true",
-#         help="Submit to a deployed Prefect work pool instead of running locally.",
-#     )
-#     parser.add_argument(
-#         "--name",
-#         type=str,
-#         default="weekly-retraining",
-#         help="Deployment name to trigger (only used with --deploy).",
-#     )
-#     args = parser.parse_args()
-
-#     if args.deploy:
-#         # ── Remote: submit a run to a live Prefect deployment ───────────────
-#         from prefect.deployments import run_deployment
-#         print(f"Submitting run to deployment: superconductivity-training-pipeline/{args.name}")
-#         run = run_deployment(
-#             name=f"superconductivity-training-pipeline/{args.name}",
-#             parameters={
-#                 "config_path": args.config,
-#                 "n_trials_override": args.trials,
-#             },
-#         )
-#         print(f"Run submitted: {run.id}")
-#     else:
-#         # ── Local: run in-process ────────────────────────────────────────────
-#         from src.orchestration.flows import training_pipeline
-#         result = training_pipeline(
-#             config_path=args.config,
-#             n_trials_override=args.trials,
-#         )
-#         print("\n── Pipeline complete ──────────────────────────────────────")
-#         for k, v in result.items():
-#             print(f"  {k}: {v}")
-
+            try:
+                server_process.wait(timeout=10)
+            except Exception:
+                server_process.kill()
+                logger.info("Prefect server force-killed after timeout.")
 
 if __name__ == "__main__":
     main()

@@ -92,17 +92,30 @@ class ModelEvaluator:
         top_features: list[str],
         run_id: str | None = None,
     ) -> None:
-        """
-        Log all post-training visual artifacts to the active MLflow run.
-        Call this after evaluate() and feature_importances().
-        """
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import mlflow
         import numpy as np
 
-        ctx = mlflow.start_run(run_id=run_id) if run_id else _null_context()
+        # Check MLflow server is reachable
+        tracking_uri = mlflow.get_tracking_uri()
+        if tracking_uri and tracking_uri.startswith("http"):
+            import urllib.request
+            try:
+                urllib.request.urlopen(tracking_uri, timeout=3)
+            except Exception as e:
+                logger.warning(f"MLflow server not reachable — skipping artifact logging.")
+                return
+
+        try:
+            if run_id:
+                ctx = mlflow.start_run(run_id=run_id)
+            else:
+                ctx = mlflow.start_run()
+        except Exception as exc:
+            logger.warning(f"Could not start MLflow run: {exc}")
+            return
 
         with ctx:
             y_pred = self.model.predict(X_test[top_features])
