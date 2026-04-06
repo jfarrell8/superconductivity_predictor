@@ -111,7 +111,7 @@ class DataLoader:
             row_count=len(df),
             column_count=len(df.columns),
             sha256=sha,
-            missing_values={k: int(v) for k, v in missing.items() if v > 0},
+            missing_values={str(k): int(v) for k, v in missing.items() if v > 0},
         )
 
     # ── Private helpers ──────────────────────────────────────────────────────
