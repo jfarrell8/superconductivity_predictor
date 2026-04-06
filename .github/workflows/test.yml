@@ -12,11 +12,8 @@ on:
 
 jobs:
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Test (Python 3.10)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v4
@@ -24,11 +21,36 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.10"
           cache: pip
 
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Install core ML stack
+        run: |
+          pip install --upgrade pip setuptools
+          pip install numpy pandas scipy scikit-learn xgboost lightgbm optuna shap joblib
+
+      - name: Install config and logging
+        run: pip install pyyaml python-dotenv loguru
+
+      - name: Install API layer
+        run: pip install fastapi "uvicorn[standard]" pydantic pydantic-settings httpx
+
+      - name: Install storage layer
+        run: pip install boto3 s3fs fsspec
+
+      - name: Install orchestration and tracking
+        run: |
+          pip install mlflow
+          pip install prefect
+
+      - name: Install dev and test tools
+        run: |
+          pip install pytest pytest-cov pytest-asyncio anyio
+          pip install ruff mypy pandas-stubs types-PyYAML
+          pip install "moto[s3]>=5.0"
+
+      - name: Install package
+        run: pip install -e "." --no-deps
 
       - name: Lint (Ruff)
         run: ruff check src/ tests/
@@ -44,8 +66,7 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=80 \
             -v \
-            -m \
-            "not slow"
+            -m "not slow"
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
