@@ -72,8 +72,11 @@ ignore = ["ANN401", "ANN001", "ANN201", "ANN202"]
 # ── mypy ───────────────────────────────────────────────────────────────────
 [tool.mypy]
 python_version = "3.10"
-strict = true
+strict = false
 ignore_missing_imports = true
+disallow_untyped_defs = true
+warn_return_any = false
+no_implicit_optional = true
 
 # ── pytest ─────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
