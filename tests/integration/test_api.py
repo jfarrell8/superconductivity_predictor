@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.app import app, app_state
+from src.api.app import app, app_state, settings
 from src.models.trainer import ModelMetadata
 from src.monitoring.logger import PredictionLogger
 
@@ -61,6 +61,8 @@ def mock_app_state(tmp_path: Path) -> Generator[None, None, None]:
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([4.5])
 
+    original_settings_path = settings.prediction_log_path
+
     original = {
         "model": app_state.model,
         "metadata": app_state.metadata,
@@ -69,6 +71,8 @@ def mock_app_state(tmp_path: Path) -> Generator[None, None, None]:
         "prediction_logger": app_state.prediction_logger,
     }
 
+    settings.prediction_log_path = str(tmp_path / "test_predictions.jsonl")
+
     app_state.model = mock_model
     app_state.metadata = MOCK_METADATA
     app_state.top_features = MOCK_FEATURES
@@ -76,6 +80,8 @@ def mock_app_state(tmp_path: Path) -> Generator[None, None, None]:
     app_state.prediction_logger = PredictionLogger(sink=tmp_path / "test_predictions.jsonl")
 
     yield
+
+    settings.prediction_log_path = original_settings_path
 
     app_state.model = original["model"]
     app_state.metadata = original["metadata"]

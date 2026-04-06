@@ -172,7 +172,7 @@ class TestSplitDataTask:
 
 # ─── Full flow smoke test (no Prefect server) ─────────────────────────────────
 
-
+@pytest.mark.slow
 class TestTrainingPipelineSmoke:
     def test_pipeline_returns_expected_keys(self, tmp_path: Path) -> None:
         """
