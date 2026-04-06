@@ -70,7 +70,7 @@ def _configure_mlflow_if_enabled(cfg: dict) -> None:
     logger.info(f"MLflow tracking: {tracking_uri} | experiment: {exp_name}")
 
 
-def _get_logger():
+def _get_logger() -> Any:
     """Get Prefect run logger if available, fall back to loguru."""
     try:
         return get_run_logger()

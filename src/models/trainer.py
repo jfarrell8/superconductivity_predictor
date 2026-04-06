@@ -432,6 +432,8 @@ class ModelTrainer:
         except Exception as exc:
             logger.warning(f"MLflow model logging failed (non-fatal): {exc}")
 
+        assert self._best_model is not None, "Model must be fitted first"
+
         # ── 2. Per-boosting-round learning curve ─────────────────────────────
         try:
             if model_type == "xgboost" and hasattr(self._best_model, "evals_result_"):
