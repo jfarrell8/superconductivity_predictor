@@ -11,7 +11,7 @@ serialize, or render in a dashboard.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +20,6 @@ import shap
 from loguru import logger
 from sklearn.base import BaseEstimator
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
 
 # ─── Metric container ─────────────────────────────────────────────────────────
 
@@ -33,10 +32,7 @@ class RegressionMetrics:
     n_samples: int
 
     def __str__(self) -> str:
-        return (
-            f"RMSE={self.rmse:.4f}  MAE={self.mae:.4f}  "
-            f"R²={self.r2:.4f}  n={self.n_samples}"
-        )
+        return f"RMSE={self.rmse:.4f}  MAE={self.mae:.4f}  R²={self.r2:.4f}  n={self.n_samples}"
 
     def to_dict(self) -> dict[str, float | int]:
         return {
@@ -63,8 +59,8 @@ class ModelEvaluator:
 
     def __init__(self, model: BaseEstimator) -> None:
         self.model = model
-        self._shap_values: Optional[np.ndarray] = None
-        self._shap_explainer: Optional[shap.TreeExplainer] = None
+        self._shap_values: np.ndarray | None = None
+        self._shap_explainer: shap.TreeExplainer | None = None
 
     # ── Core metrics ─────────────────────────────────────────────────────────
 
@@ -93,26 +89,24 @@ class ModelEvaluator:
         run_id: str | None = None,
     ) -> None:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         import mlflow
-        import numpy as np
 
         # Check MLflow server is reachable
         tracking_uri = mlflow.get_tracking_uri()
         if tracking_uri and tracking_uri.startswith("http"):
             import urllib.request
+
             try:
                 urllib.request.urlopen(tracking_uri, timeout=3)
-            except Exception as e:
-                logger.warning(f"MLflow server not reachable — skipping artifact logging.")
+            except Exception:
+                logger.warning("MLflow server not reachable — skipping artifact logging.")
                 return
 
         try:
-            if run_id:
-                ctx = mlflow.start_run(run_id=run_id)
-            else:
-                ctx = mlflow.start_run()
+            ctx = mlflow.start_run(run_id=run_id) if run_id else mlflow.start_run()
         except Exception as exc:
             logger.warning(f"Could not start MLflow run: {exc}")
             return
@@ -155,8 +149,9 @@ class ModelEvaluator:
             ax.axvline(0, color="red", linestyle="--", linewidth=1)
             ax.set_xlabel("Residual")
             ax.set_ylabel("Count")
-            ax.set_title(f"Residual distribution  (mean={residuals.mean():.3f}, "
-                        f"std={residuals.std():.3f})")
+            ax.set_title(
+                f"Residual distribution  (mean={residuals.mean():.3f}, std={residuals.std():.3f})"
+            )
             fig.tight_layout()
             mlflow.log_figure(fig, "plots/residual_distribution.png")
             plt.close(fig)
@@ -263,7 +258,7 @@ class ModelEvaluator:
         y_train: pd.Series,
         y_test: pd.Series,
         feature_counts: list[int],
-        importance_df: Optional[pd.DataFrame] = None,
+        importance_df: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
         """
         Train the same model architecture with decreasing feature subsets
@@ -305,12 +300,14 @@ class ModelEvaluator:
         fig.tight_layout()
         return fig
 
-    def top_k_features(
-        self, importance_df: pd.DataFrame, k: int
-    ) -> list[str]:
+    def top_k_features(self, importance_df: pd.DataFrame, k: int) -> list[str]:
         """Return the names of the top k features by importance."""
         return importance_df.head(k)["feature"].tolist()
 
+
 class _null_context:
-    def __enter__(self) -> "_null_context": return self
-    def __exit__(self, *_: Any) -> None: pass
+    def __enter__(self) -> _null_context:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        pass

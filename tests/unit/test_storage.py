@@ -7,15 +7,12 @@ No real AWS credentials or network calls are made.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from src.storage.store import LocalBackend, S3Backend, StorageBackend
-
 
 # ─── LocalBackend ─────────────────────────────────────────────────────────────
 
@@ -69,6 +66,7 @@ def s3_store():
 
     with moto.mock_aws():
         import boto3
+
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket="test-bucket")
 
@@ -113,6 +111,7 @@ class TestS3Backend:
         moto = pytest.importorskip("moto")
         with moto.mock_aws():
             import boto3
+
             client = boto3.client("s3", region_name="us-east-1")
             client.create_bucket(Bucket="no-prefix-bucket")
             store = S3Backend(bucket="no-prefix-bucket", prefix="", region="us-east-1")

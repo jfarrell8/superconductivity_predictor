@@ -2,13 +2,16 @@
 """
 Shared pytest fixtures available to all test modules.
 """
+
 from __future__ import annotations
+
+import logging
+import os
 
 import numpy as np
 import pandas as pd
 import pytest
-import os
-import logging
+
 
 @pytest.fixture(scope="session")
 def synthetic_train_df() -> pd.DataFrame:
@@ -37,8 +40,7 @@ def small_feature_df() -> pd.DataFrame:
     rng = np.random.default_rng(0)
     n = 100
     return pd.DataFrame(
-        {f"feature_{i}": rng.normal(size=n) for i in range(10)}
-        | {"target": rng.normal(size=n)}
+        {f"feature_{i}": rng.normal(size=n) for i in range(10)} | {"target": rng.normal(size=n)}
     )
 
 

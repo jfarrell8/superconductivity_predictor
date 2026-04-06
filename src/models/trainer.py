@@ -17,10 +17,9 @@ Design
 from __future__ import annotations
 
 import json
-import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import joblib
 import numpy as np
@@ -30,7 +29,7 @@ from lightgbm import LGBMRegressor
 from loguru import logger
 from optuna.samplers import TPESampler
 from sklearn.base import BaseEstimator
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import ElasticNet, Lasso, Ridge
 from sklearn.model_selection import KFold, cross_val_score
 from xgboost import XGBRegressor
@@ -58,7 +57,7 @@ class ModelMetadata:
         path.write_text(json.dumps(asdict(self), indent=2))
 
     @classmethod
-    def load(cls, path: Path) -> "ModelMetadata":
+    def load(cls, path: Path) -> ModelMetadata:
         return cls(**json.loads(path.read_text()))
 
 
@@ -121,7 +120,7 @@ def _build_model(trial: optuna.Trial, search_space: list[str]) -> BaseEstimator:
 # ─── MLflow helpers ───────────────────────────────────────────────────────────
 
 
-def _configure_mlflow(cfg: dict) -> Optional[str]:
+def _configure_mlflow(cfg: dict) -> str | None:
     """
     Point MLflow at the tracking server from config and return the
     experiment ID (creating the experiment if it does not yet exist).
@@ -168,8 +167,7 @@ def _promote_model_if_better(
     # Register (creates the registered model if it doesn't exist yet)
     mv = mlflow.register_model(model_uri=model_uri, name=registered_model_name)
     logger.info(
-        f"MLflow: registered model '{registered_model_name}' "
-        f"version {mv.version} from run {run_id}"
+        f"MLflow: registered model '{registered_model_name}' version {mv.version} from run {run_id}"
     )
 
     if cv_rmse < threshold:
@@ -184,10 +182,7 @@ def _promote_model_if_better(
             f"(CV RMSE={cv_rmse:.4f} < threshold={threshold})"
         )
     else:
-        logger.info(
-            f"MLflow: model NOT promoted — CV RMSE={cv_rmse:.4f} "
-            f">= threshold={threshold}"
-        )
+        logger.info(f"MLflow: model NOT promoted — CV RMSE={cv_rmse:.4f} >= threshold={threshold}")
 
 
 # ─── Trainer ──────────────────────────────────────────────────────────────────
@@ -221,21 +216,19 @@ class ModelTrainer:
         cv_folds: int = 5,
         n_jobs: int = -1,
         random_seed: int = 42,
-        search_space: Optional[list[str]] = None,
-        mlflow_cfg: Optional[dict] = None,
+        search_space: list[str] | None = None,
+        mlflow_cfg: dict | None = None,
     ) -> None:
         self.n_trials = n_trials
         self.cv_folds = cv_folds
         self.n_jobs = n_jobs
         self.random_seed = random_seed
-        self.search_space = search_space or [
-            "linear", "lightgbm", "xgboost", "random_forest"
-        ]
+        self.search_space = search_space or ["linear", "lightgbm", "xgboost", "random_forest"]
         self.mlflow_cfg = mlflow_cfg or {}
-        self._study: Optional[optuna.Study] = None
-        self._best_model: Optional[BaseEstimator] = None
-        self._metadata: Optional[ModelMetadata] = None
-        self._mlflow_run_id: Optional[str] = None
+        self._study: optuna.Study | None = None
+        self._best_model: BaseEstimator | None = None
+        self._metadata: ModelMetadata | None = None
+        self._mlflow_run_id: str | None = None
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -243,8 +236,8 @@ class ModelTrainer:
         self,
         X_train: pd.DataFrame,
         y_train: pd.Series,
-        extra_tags: Optional[dict[str, str]] = None,
-    ) -> "ModelTrainer":
+        extra_tags: dict[str, str] | None = None,
+    ) -> ModelTrainer:
         """
         Run HPO and fit the winning model on the full training set.
 
@@ -260,24 +253,27 @@ class ModelTrainer:
         cv = KFold(n_splits=self.cv_folds, shuffle=True, random_state=self.random_seed)
 
         with (
-            mlflow.start_run(tags=extra_tags or {}) if tracking_enabled
-            else _null_context()
+            mlflow.start_run(tags=extra_tags or {}) if tracking_enabled else _null_context()
         ) as run:
-
             if tracking_enabled and run is not None:
                 self._mlflow_run_id = run.info.run_id
-                mlflow.set_tags({
-                    "n_trials": str(self.n_trials),
-                    "cv_folds": str(self.cv_folds),
-                    "random_seed": str(self.random_seed),
-                    "search_space": ",".join(self.search_space),
-                })
+                mlflow.set_tags(
+                    {
+                        "n_trials": str(self.n_trials),
+                        "cv_folds": str(self.cv_folds),
+                        "random_seed": str(self.random_seed),
+                        "search_space": ",".join(self.search_space),
+                    }
+                )
 
             def objective(trial: optuna.Trial) -> float:
                 model = _build_model(trial, self.search_space)
                 scores = cross_val_score(
-                    model, X_train, y_train,
-                    cv=cv, scoring="neg_mean_squared_error",
+                    model,
+                    X_train,
+                    y_train,
+                    cv=cv,
+                    scoring="neg_mean_squared_error",
                 )
                 rmse = float(np.sqrt(-scores.mean()))
 
@@ -298,10 +294,7 @@ class ModelTrainer:
 
             best_rmse = self._study.best_value
             best_params = self._study.best_params
-            logger.info(
-                f"HPO complete. Best CV RMSE={best_rmse:.4f} "
-                f"with params={best_params}"
-            )
+            logger.info(f"HPO complete. Best CV RMSE={best_rmse:.4f} with params={best_params}")
 
             # ── Rebuild and fit the winner on the full training set ──────────
             best_trial = self._study.best_trial
@@ -342,14 +335,17 @@ class ModelTrainer:
         Called by the orchestration flow after evaluation.
         """
         import mlflow
+
         if self._mlflow_run_id is None:
             return
         with mlflow.start_run(run_id=self._mlflow_run_id):
-            mlflow.log_metrics({
-                f"test_rmse_top{top_k}": rmse,
-                f"test_mae_top{top_k}": mae,
-                f"test_r2_top{top_k}": r2,
-            })
+            mlflow.log_metrics(
+                {
+                    f"test_rmse_top{top_k}": rmse,
+                    f"test_mae_top{top_k}": mae,
+                    f"test_r2_top{top_k}": r2,
+                }
+            )
 
     def promote_if_better(self, cv_rmse: float) -> None:
         """
@@ -375,7 +371,7 @@ class ModelTrainer:
         X_train: pd.DataFrame,
         y_train: pd.Series,
         top_features: list[str],
-    ) -> "ModelTrainer":
+    ) -> ModelTrainer:
         """Refit the best model architecture on a reduced feature set."""
         if self._best_model is None:
             raise RuntimeError("Call fit() before refit_on_top_k().")
@@ -405,14 +401,15 @@ class ModelTrainer:
         return self._metadata
 
     @property
-    def mlflow_run_id(self) -> Optional[str]:
+    def mlflow_run_id(self) -> str | None:
         return self._mlflow_run_id
 
     # ── Private helpers ──────────────────────────────────────────────────────
-    
+
     def _log_model_artifact(self) -> None:
         """Log the fitted model + all training visualizations to MLflow."""
         import matplotlib
+
         matplotlib.use("Agg")  # non-interactive backend — safe for scripts
         import matplotlib.pyplot as plt
         import mlflow
@@ -423,9 +420,11 @@ class ModelTrainer:
         try:
             if model_type == "xgboost":
                 import mlflow.xgboost
+
                 mlflow.xgboost.log_model(self._best_model, artifact_path="model")
             elif model_type == "lightgbm":
                 import mlflow.lightgbm
+
                 mlflow.lightgbm.log_model(self._best_model, artifact_path="model")
             else:
                 mlflow.sklearn.log_model(self._best_model, artifact_path="model")
@@ -440,9 +439,7 @@ class ModelTrainer:
                 for dataset, metrics in results.items():
                     for metric, values in metrics.items():
                         for step, val in enumerate(values):
-                            mlflow.log_metric(
-                                f"{dataset}_{metric}", val, step=step
-                            )
+                            mlflow.log_metric(f"{dataset}_{metric}", val, step=step)
                 logger.info("MLflow: logged XGBoost learning curve")
 
             elif model_type == "lightgbm":
@@ -506,7 +503,7 @@ class ModelRegistry:
     def __init__(
         self,
         model_dir: Path | str,
-        storage: Optional[Any] = None,  # StorageBackend, typed loosely to avoid circular import
+        storage: Any | None = None,  # StorageBackend, typed loosely to avoid circular import
     ) -> None:
         self.model_dir = Path(model_dir)
         self.model_dir.mkdir(parents=True, exist_ok=True)
@@ -515,7 +512,7 @@ class ModelRegistry:
     def save(
         self,
         trainer: ModelTrainer,
-        top_features: Optional[list[str]] = None,
+        top_features: list[str] | None = None,
         filename: str = "best_model.pkl",
     ) -> None:
         # ── Write locally first ──────────────────────────────────────────────
@@ -524,9 +521,7 @@ class ModelRegistry:
         joblib.dump(trainer.study, self.model_dir / "optuna_study.pkl")
         trainer.metadata.save(self.model_dir / "model_metadata.json")
         if top_features:
-            (self.model_dir / "top_features.json").write_text(
-                json.dumps(top_features, indent=2)
-            )
+            (self.model_dir / "top_features.json").write_text(json.dumps(top_features, indent=2))
         logger.info(f"Artifacts saved locally to {self.model_dir}")
 
         # ── Mirror to S3 if a storage backend is configured ─────────────────
@@ -541,7 +536,7 @@ class ModelRegistry:
         path = self.model_dir / filename
         # Pull from S3 if not present locally
         if not path.exists() and self._storage is not None:
-            logger.info(f"Model not found locally — downloading from remote storage.")
+            logger.info("Model not found locally — downloading from remote storage.")
             self._storage.download(f"models/{filename}", path)
         model = joblib.load(path)
         logger.info(f"Model loaded from {path}")
@@ -567,9 +562,14 @@ class ModelRegistry:
 
 class _NullRun:
     """Mimics mlflow.ActiveRun enough to satisfy the `with` statement."""
+
     info = type("info", (), {"run_id": None})()
-    def __enter__(self) -> "_NullRun": return self
-    def __exit__(self, *_: Any) -> None: pass
+
+    def __enter__(self) -> _NullRun:
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        pass
 
 
 def _null_context() -> _NullRun:

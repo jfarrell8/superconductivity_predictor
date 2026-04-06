@@ -21,7 +21,6 @@ from src.features.engineer import (
     TargetTransformer,
 )
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -81,9 +80,7 @@ class TestBinningTransformer:
         self, element_binner: BinningTransformer, small_df: pd.DataFrame
     ) -> None:
         out = element_binner.fit_transform(small_df)
-        middle_mask = (small_df["number_of_elements"] > 1) & (
-            small_df["number_of_elements"] < 7
-        )
+        middle_mask = (small_df["number_of_elements"] > 1) & (small_df["number_of_elements"] < 7)
         expected = small_df.loc[middle_mask, "number_of_elements"]
         actual = out.loc[middle_mask, "num_elements_simplified"]
         pd.testing.assert_series_equal(
@@ -100,9 +97,7 @@ class TestBinningTransformer:
             "BinningTransformer should not drop the source column."
         )
 
-    def test_missing_column_is_skipped_gracefully(
-        self, element_binner: BinningTransformer
-    ) -> None:
+    def test_missing_column_is_skipped_gracefully(self, element_binner: BinningTransformer) -> None:
         df = pd.DataFrame({"some_other_col": [1, 2, 3]})
         out = element_binner.fit_transform(df)  # should not raise
         assert "num_elements_simplified" not in out.columns
@@ -186,7 +181,7 @@ class TestFeaturePruner:
             {
                 "x1": base,
                 "x2": base + rng.normal(scale=0.01, size=300),  # near-perfect correlation
-                "x3": rng.normal(size=300),                     # independent
+                "x3": rng.normal(size=300),  # independent
                 "target": rng.normal(size=300),
             }
         )
@@ -208,9 +203,7 @@ class TestFeaturePruner:
 
     def test_explicit_drop_columns(self) -> None:
         df = self._make_correlated_df()
-        pruner = FeaturePruner(
-            PrunerConfig(correlation_threshold=0.99, drop_columns=["x3"])
-        )
+        pruner = FeaturePruner(PrunerConfig(correlation_threshold=0.99, drop_columns=["x3"]))
         out = pruner.fit_transform(df, target_column="target")
         assert "x3" not in out.columns
 
@@ -225,9 +218,7 @@ class TestFeaturePruner:
 
 class TestFeatureScaler:
     def test_scaled_columns_have_zero_mean(self) -> None:
-        df = pd.DataFrame(
-            {"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [10.0, 20.0, 30.0, 40.0, 50.0]}
-        )
+        df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0], "b": [10.0, 20.0, 30.0, 40.0, 50.0]})
         scaler = FeatureScaler()
         out = scaler.fit_transform(df)
         np.testing.assert_allclose(out["a"].mean(), 0.0, atol=1e-10)
@@ -248,5 +239,5 @@ class TestFeatureScaler:
 
     def test_transform_without_fit_raises(self) -> None:
         scaler = FeatureScaler()
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             scaler.transform(pd.DataFrame({"a": [1.0, 2.0]}))

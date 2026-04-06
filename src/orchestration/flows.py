@@ -26,6 +26,7 @@ Deploying to a Prefect Cloud work pool:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -34,7 +35,6 @@ import pandas as pd
 import yaml
 from loguru import logger
 from sklearn.model_selection import train_test_split
-import json
 
 # Support running from project root without `pip install -e .`
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -48,7 +48,6 @@ from src.evaluation.evaluator import ModelEvaluator, RegressionMetrics
 from src.features.engineer import FeatureEngineer
 from src.models.trainer import ModelRegistry, ModelTrainer
 from src.storage.store import StorageBackend
-
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -64,6 +63,7 @@ def _configure_mlflow_if_enabled(cfg: dict) -> None:
     if not tracking_uri:
         return
     import mlflow
+
     mlflow.set_tracking_uri(tracking_uri)
     exp_name = cfg["experiment"].get("mlflow_experiment_name", "default")
     mlflow.set_experiment(exp_name)
@@ -120,9 +120,7 @@ def ingest_data(cfg: dict) -> tuple[pd.DataFrame, DataManifest]:
     retries=2,
     retry_delay_seconds=5,
 )
-def engineer_features(
-    raw_df: pd.DataFrame, cfg: dict
-) -> tuple[pd.DataFrame, pd.Series]:
+def engineer_features(raw_df: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, pd.Series]:
     log = _get_logger()
     engineer = FeatureEngineer.from_config(cfg)
     X, y = engineer.fit_transform(raw_df)
@@ -155,9 +153,7 @@ def split_data(
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=seed, shuffle=True
     )
-    _get_logger().info(
-        f"Split: {len(X_train):,} train / {len(X_test):,} test"
-    )
+    _get_logger().info(f"Split: {len(X_train):,} train / {len(X_test):,} test")
     return X_train, X_test, y_train, y_test
 
 
@@ -280,6 +276,7 @@ def persist_artifacts(
     )
 
     import joblib
+
     full_model_path = model_dir / cfg["artifacts"]["model_filename"]
     joblib.dump(trainer.best_model, full_model_path)
 
@@ -306,8 +303,7 @@ def _publish_metrics_artifact(
 ) -> None:
     """Publish a Markdown summary to the Prefect UI."""
     table_rows = "\n".join(
-        f"| {row.n_features} | {row.rmse:.4f} |"
-        for row in reduction_df.itertuples()
+        f"| {row.n_features} | {row.rmse:.4f} |" for row in reduction_df.itertuples()
     )
     md = f"""
 ## Training Run Summary

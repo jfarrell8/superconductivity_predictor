@@ -20,9 +20,7 @@ def fitted_evaluator() -> tuple[ModelEvaluator, pd.DataFrame, pd.Series]:
     """Returns a ModelEvaluator with a trivial fitted LinearRegression."""
     rng = np.random.default_rng(42)
     n = 200
-    X = pd.DataFrame(
-        {f"feature_{i}": rng.normal(size=n) for i in range(5)}
-    )
+    X = pd.DataFrame({f"feature_{i}": rng.normal(size=n) for i in range(5)})
     # Perfect linear target so we can assert R² ≈ 1
     y = pd.Series(
         X["feature_0"] * 2.5 + X["feature_1"] * -1.3 + rng.normal(scale=0.01, size=n),
@@ -86,6 +84,7 @@ class TestModelEvaluator:
     def test_feature_importances_missing_attribute_raises(self) -> None:
         """Models without feature_importances_ or coef_ should raise AttributeError."""
         from unittest.mock import MagicMock
+
         mock_model = MagicMock(spec=[])  # no attributes at all
         evaluator = ModelEvaluator(mock_model)
         with pytest.raises(AttributeError):
@@ -120,11 +119,10 @@ class TestModelEvaluator:
         self, fitted_evaluator: tuple[ModelEvaluator, pd.DataFrame, pd.Series]
     ) -> None:
         import matplotlib.pyplot as plt
+
         evaluator, X, y = fitted_evaluator
         imp_df = evaluator.feature_importances(X.columns.tolist())
-        reduction_df = evaluator.feature_reduction_sweep(
-            X, X, y, y, [5, 3], imp_df
-        )
+        reduction_df = evaluator.feature_reduction_sweep(X, X, y, y, [5, 3], imp_df)
         fig = evaluator.plot_reduction_curve(reduction_df)
         assert isinstance(fig, plt.Figure)
         plt.close("all")

@@ -17,22 +17,21 @@ GET  /monitoring/logs         — summary statistics from the prediction log
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import Any
 
-import numpy as np
 import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from src.models.trainer import ModelMetadata, ModelRegistry
 from src.monitoring.drift import DriftMonitor
 from src.monitoring.logger import PredictionLogger
-
 
 # ─── Application settings ─────────────────────────────────────────────────────
 
@@ -91,9 +90,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     except FileNotFoundError as exc:
         logger.error(f"Artifact not found: {exc}")
-        raise RuntimeError(
-            "Model artifacts missing — run the training pipeline first."
-        ) from exc
+        raise RuntimeError("Model artifacts missing — run the training pipeline first.") from exc
 
     # Initialise drift monitor against training reference data
     if Path(settings.reference_data_path).exists():
@@ -150,10 +147,12 @@ class PredictionRequest(BaseModel):
     Missing features will be imputed with training set medians.
     Call GET /model/info to see the feature names your model expects.
     """
+
     features: dict[str, float] = Field(
         ...,
         description="See GET /model/info for required feature names.",
     )
+
 
 class PredictionResponse(BaseModel):
     predicted_critical_temp_boxcox: float = Field(
@@ -163,8 +162,7 @@ class PredictionResponse(BaseModel):
     model_type: str
     n_features_used: int
     imputed_features: list[str] = Field(
-        default=[],
-        description="Features that were missing and filled with training medians."
+        default=[], description="Features that were missing and filled with training medians."
     )
 
 
@@ -324,6 +322,7 @@ async def predict_batch(request: BatchPredictionRequest) -> BatchPredictionRespo
         model_type=model_type,
     )
 
+
 FEATURE_DESCRIPTIONS = {
     "mean_atomic_mass": "Average atomic mass of elements in the compound (g/mol)",
     "wtd_mean_atomic_mass": "Composition-weighted mean atomic mass (g/mol)",
@@ -360,6 +359,7 @@ FEATURE_DESCRIPTIONS = {
     "num_elements_simplified": "Number of distinct elements (binned: 2-6)",
 }
 
+
 @app.get("/features", tags=["Inference"])
 async def feature_info() -> dict:
     """
@@ -369,8 +369,7 @@ async def feature_info() -> dict:
     """
     if not app_state.top_features:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded."
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model not loaded."
         )
 
     # Load the processed training data to compute ranges
@@ -401,6 +400,7 @@ async def feature_info() -> dict:
         "features": feature_info,
     }
 
+
 @app.get("/predict/example", tags=["Inference"])
 async def predict_example() -> dict:
     """
@@ -411,13 +411,11 @@ async def predict_example() -> dict:
     """
     if not app_state.top_features:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded."
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model not loaded."
         )
 
     example_features = {
-        feat: round(app_state.feature_medians.get(feat, 0.0), 4)
-        for feat in app_state.top_features
+        feat: round(app_state.feature_medians.get(feat, 0.0), 4) for feat in app_state.top_features
     }
 
     return {

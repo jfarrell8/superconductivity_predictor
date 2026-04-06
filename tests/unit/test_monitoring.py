@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.monitoring.drift import DriftMonitor, DriftReport
+from src.monitoring.drift import DriftMonitor
 
 
 @pytest.fixture()
@@ -44,9 +44,7 @@ class TestDriftMonitor:
             "No drift should be detected when new data comes from the same distribution."
         )
 
-    def test_drift_detected_on_shifted_distribution(
-        self, reference_df: pd.DataFrame
-    ) -> None:
+    def test_drift_detected_on_shifted_distribution(self, reference_df: pd.DataFrame) -> None:
         monitor = DriftMonitor(reference_df, significance_level=0.05)
         # Inject a large mean shift
         rng = np.random.default_rng(2)
@@ -87,9 +85,7 @@ class TestDriftMonitor:
         report = monitor.detect(new_df)
         assert len(report.feature_results) == 0
 
-    def test_skips_columns_with_too_few_samples(
-        self, reference_df: pd.DataFrame
-    ) -> None:
+    def test_skips_columns_with_too_few_samples(self, reference_df: pd.DataFrame) -> None:
         monitor = DriftMonitor(reference_df)
         new_df = pd.DataFrame({"mean_atomic_mass": [88.0, 89.0]})  # < 5 samples
         report = monitor.detect(new_df)
@@ -121,12 +117,14 @@ class TestPredictionLogger:
 
     def test_log_creates_file(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         logger = PredictionLogger(sink=tmp_path / "preds.jsonl")
         logger.log(features=self.FEATURES, prediction=4.31)
         assert (tmp_path / "preds.jsonl").exists()
 
     def test_log_returns_request_id(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         logger = PredictionLogger(sink=tmp_path / "preds.jsonl")
         rid = logger.log(features=self.FEATURES, prediction=4.31)
         assert isinstance(rid, str)
@@ -134,15 +132,16 @@ class TestPredictionLogger:
 
     def test_log_uses_provided_request_id(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         logger = PredictionLogger(sink=tmp_path / "preds.jsonl")
-        rid = logger.log(
-            features=self.FEATURES, prediction=4.31, request_id="my-custom-id"
-        )
+        rid = logger.log(features=self.FEATURES, prediction=4.31, request_id="my-custom-id")
         assert rid == "my-custom-id"
 
     def test_log_record_structure(self, tmp_path: Path) -> None:
         import json
+
         from src.monitoring.logger import PredictionLogger
+
         sink = tmp_path / "preds.jsonl"
         logger = PredictionLogger(sink=sink)
         logger.log(features=self.FEATURES, prediction=4.31, model_type="lightgbm")
@@ -155,17 +154,18 @@ class TestPredictionLogger:
         assert record["prediction"] == pytest.approx(4.31)
 
     def test_multiple_logs_append_lines(self, tmp_path: Path) -> None:
-        import json
         from src.monitoring.logger import PredictionLogger
+
         sink = tmp_path / "preds.jsonl"
         logger = PredictionLogger(sink=sink)
         for i in range(5):
             logger.log(features=self.FEATURES, prediction=float(i))
-        lines = [l for l in sink.read_text().splitlines() if l.strip()]
+        lines = [line for line in sink.read_text().splitlines() if line.strip()]
         assert len(lines) == 5
 
     def test_log_batch_returns_correct_count(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         logger = PredictionLogger(sink=tmp_path / "preds.jsonl")
         rids = logger.log_batch(
             feature_rows=[self.FEATURES] * 4,
@@ -175,8 +175,8 @@ class TestPredictionLogger:
         assert all(isinstance(r, str) for r in rids)
 
     def test_load_as_dataframe_expands_features(self, tmp_path: Path) -> None:
-        import json
         from src.monitoring.logger import PredictionLogger
+
         sink = tmp_path / "preds.jsonl"
         logger = PredictionLogger(sink=sink)
         logger.log(features=self.FEATURES, prediction=4.31)
@@ -188,6 +188,7 @@ class TestPredictionLogger:
 
     def test_load_as_dataframe_prediction_values_correct(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         sink = tmp_path / "preds.jsonl"
         logger = PredictionLogger(sink=sink)
         logger.log(features=self.FEATURES, prediction=4.31)
@@ -198,6 +199,7 @@ class TestPredictionLogger:
     def test_log_rotates_on_size_exceeded(self, tmp_path: Path) -> None:
         """When max_file_mb is effectively 0, every call should rotate the log."""
         from src.monitoring.logger import PredictionLogger
+
         sink = tmp_path / "preds.jsonl"
         logger = PredictionLogger(sink=sink, max_file_mb=0.0)
         # Write enough to trigger rotation on the second call
@@ -209,6 +211,7 @@ class TestPredictionLogger:
 
     def test_logger_creates_parent_directory(self, tmp_path: Path) -> None:
         from src.monitoring.logger import PredictionLogger
+
         nested_sink = tmp_path / "a" / "b" / "preds.jsonl"
         logger = PredictionLogger(sink=nested_sink)
         logger.log(features=self.FEATURES, prediction=1.0)

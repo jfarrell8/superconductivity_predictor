@@ -11,13 +11,9 @@ This tests the business logic inside each task without orchestration overhead.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-import os
-import pytest
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,17 +50,24 @@ def _make_cfg(tmp_path: Path) -> dict:
             "engineered_target_column": "critical_temp_boxcox",
             "element_bins": {
                 "column": "number_of_elements",
-                "low_threshold": 1, "low_value": 2,
-                "high_threshold": 7, "high_value": 6,
+                "low_threshold": 1,
+                "low_value": 2,
+                "high_threshold": 7,
+                "high_value": 6,
             },
             "valence_bins": {
                 "column": "range_Valence",
-                "merge_zero_to": 1, "high_threshold": 4, "high_value": 4,
+                "merge_zero_to": 1,
+                "high_threshold": 4,
+                "high_value": 4,
             },
             "protected_columns": ["num_elements_simplified"],
             "correlation_threshold": 0.8,
             "drop_low_mi_columns": [
-                "rangeValence_1", "rangeValence_2", "rangeValence_3", "rangeValence_4"
+                "rangeValence_1",
+                "rangeValence_2",
+                "rangeValence_3",
+                "rangeValence_4",
             ],
         },
         "preprocessing": {"columns_to_skip_scaling": ["num_elements_simplified"], "test_size": 0.2},
@@ -93,6 +96,7 @@ def _make_cfg(tmp_path: Path) -> dict:
 class TestIngestDataTask:
     def test_returns_dataframe_and_manifest(self, tmp_path: Path) -> None:
         from src.orchestration.flows import ingest_data
+
         cfg = _make_cfg(tmp_path)
         # Call the underlying function directly (bypasses Prefect task wrapper)
         df, manifest = ingest_data.fn(cfg)
@@ -102,6 +106,7 @@ class TestIngestDataTask:
 
     def test_manifest_has_valid_sha256(self, tmp_path: Path) -> None:
         from src.orchestration.flows import ingest_data
+
         cfg = _make_cfg(tmp_path)
         _, manifest = ingest_data.fn(cfg)
         assert len(manifest.sha256) == 64
@@ -113,6 +118,7 @@ class TestIngestDataTask:
 class TestEngineerFeaturesTask:
     def test_returns_x_and_y(self, tmp_path: Path) -> None:
         from src.orchestration.flows import engineer_features, ingest_data
+
         cfg = _make_cfg(tmp_path)
         raw_df, _ = ingest_data.fn(cfg)
         X, y = engineer_features.fn(raw_df, cfg)
@@ -122,6 +128,7 @@ class TestEngineerFeaturesTask:
 
     def test_target_not_in_features(self, tmp_path: Path) -> None:
         from src.orchestration.flows import engineer_features, ingest_data
+
         cfg = _make_cfg(tmp_path)
         raw_df, _ = ingest_data.fn(cfg)
         X, _ = engineer_features.fn(raw_df, cfg)
@@ -130,6 +137,7 @@ class TestEngineerFeaturesTask:
 
     def test_processed_csv_written(self, tmp_path: Path) -> None:
         from src.orchestration.flows import engineer_features, ingest_data
+
         cfg = _make_cfg(tmp_path)
         raw_df, _ = ingest_data.fn(cfg)
         engineer_features.fn(raw_df, cfg)
@@ -142,6 +150,7 @@ class TestEngineerFeaturesTask:
 class TestSplitDataTask:
     def test_split_sizes(self, tmp_path: Path) -> None:
         from src.orchestration.flows import engineer_features, ingest_data, split_data
+
         cfg = _make_cfg(tmp_path)
         raw_df, _ = ingest_data.fn(cfg)
         X, y = engineer_features.fn(raw_df, cfg)
@@ -152,6 +161,7 @@ class TestSplitDataTask:
 
     def test_no_index_overlap(self, tmp_path: Path) -> None:
         from src.orchestration.flows import engineer_features, ingest_data, split_data
+
         cfg = _make_cfg(tmp_path)
         raw_df, _ = ingest_data.fn(cfg)
         X, y = engineer_features.fn(raw_df, cfg)
@@ -174,6 +184,7 @@ class TestTrainingPipelineSmoke:
         cfg = _make_cfg(tmp_path)
         # Write config to a temp YAML file so the flow can load it
         import yaml
+
         config_path = tmp_path / "test_config.yaml"
         config_path.write_text(yaml.dump(cfg))
 

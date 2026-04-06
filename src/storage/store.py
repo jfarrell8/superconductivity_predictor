@@ -31,11 +31,10 @@ from __future__ import annotations
 import io
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 import pandas as pd
 from loguru import logger
-
 
 # ─── Abstract base ────────────────────────────────────────────────────────────
 
@@ -74,7 +73,7 @@ class StorageBackend(ABC):
     # ── Factory ──────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls, cfg: dict) -> "StorageBackend":
+    def from_config(cls, cfg: dict) -> StorageBackend:
         """Instantiate the correct backend from a parsed YAML config."""
         storage_cfg = cfg.get("storage", {})
         backend = storage_cfg.get("backend", "local")
@@ -106,12 +105,14 @@ class LocalBackend(StorageBackend):
 
     def upload(self, local_path: str | Path, remote_key: str) -> None:
         import shutil
+
         dest = self._resolve(remote_key)
         shutil.copy2(str(local_path), str(dest))
         logger.debug(f"[local] upload {local_path} → {dest}")
 
     def download(self, remote_key: str, local_path: str | Path) -> None:
         import shutil
+
         src = self._resolve(remote_key)
         Path(local_path).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(src), str(local_path))
@@ -166,6 +167,7 @@ class S3Backend(StorageBackend):
     def _s3(self) -> Any:
         if self._client is None:
             import boto3
+
             self._client = boto3.client("s3", region_name=self.region)
         return self._client
 
@@ -188,6 +190,7 @@ class S3Backend(StorageBackend):
 
     def exists(self, remote_key: str) -> bool:
         import botocore.exceptions
+
         try:
             self._s3().head_object(Bucket=self.bucket, Key=self._key(remote_key))
             return True

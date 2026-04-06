@@ -12,7 +12,6 @@ import pytest
 
 from src.data.loader import DataLoader, DataManifest
 
-
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -110,9 +109,7 @@ class TestDataLoader:
         train_csv = tmp_path / "train.csv"
         meta_csv = tmp_path / "meta.csv"
         _write_valid_csv(train_csv)
-        pd.DataFrame({"formula": ["YBCO"], "material": ["cuprate"]}).to_csv(
-            meta_csv, index=False
-        )
+        pd.DataFrame({"formula": ["YBCO"], "material": ["cuprate"]}).to_csv(meta_csv, index=False)
         loader = DataLoader(train_path=train_csv, metadata_path=meta_csv).load()
         assert loader.metadata is not None
         assert "formula" in loader.metadata.columns

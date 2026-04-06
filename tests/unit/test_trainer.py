@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.linear_model import Ridge
 
 from src.models.trainer import ModelMetadata, ModelRegistry, ModelTrainer
-
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -49,7 +47,7 @@ def fast_trainer() -> ModelTrainer:
         n_jobs=1,
         random_seed=0,
         search_space=["linear"],
-        mlflow_cfg=None,   # disable tracking in unit tests
+        mlflow_cfg=None,  # disable tracking in unit tests
     )
 
 
@@ -115,7 +113,7 @@ class TestModelTrainer:
         assert meta.n_features == X.shape[1]
         assert meta.train_rows == len(X)
         assert meta.cv_rmse > 0
-        assert meta.model_type in ("linear",)   # only linear in search_space
+        assert meta.model_type in ("linear",)  # only linear in search_space
 
     def test_fit_produces_optuna_study(
         self,
@@ -203,12 +201,14 @@ class TestMLflowIntegration:
             search_space=["linear"],
             mlflow_cfg={"auto_log_params": True, "log_model": False},
         )
-        with patch("mlflow.start_run") as mock_run, \
-            patch("mlflow.log_params"), \
-            patch("mlflow.log_metric"), \
-            patch("mlflow.log_metrics"), \
-            patch("mlflow.set_tags"), \
-            patch("mlflow.set_tag"):
+        with (
+            patch("mlflow.start_run") as mock_run,
+            patch("mlflow.log_params"),
+            patch("mlflow.log_metric"),
+            patch("mlflow.log_metrics"),
+            patch("mlflow.set_tags"),
+            patch("mlflow.set_tag"),
+        ):
             mock_ctx = MagicMock()
             mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
             mock_ctx.__exit__ = MagicMock(return_value=False)
@@ -230,8 +230,7 @@ class TestMLflowIntegration:
 
     def test_promote_if_better_skips_when_no_run_id(self) -> None:
         trainer = ModelTrainer(
-            n_trials=2, cv_folds=2, n_jobs=1,
-            search_space=["linear"], mlflow_cfg={}
+            n_trials=2, cv_folds=2, n_jobs=1, search_space=["linear"], mlflow_cfg={}
         )
         # Should not raise — just silently skip
         trainer.promote_if_better(cv_rmse=0.5)
@@ -246,13 +245,14 @@ class TestMLflowIntegration:
 
 
 class TestModelRegistry:
-    def _make_fitted_trainer(
-        self, xy: tuple[pd.DataFrame, pd.Series]
-    ) -> ModelTrainer:
+    def _make_fitted_trainer(self, xy: tuple[pd.DataFrame, pd.Series]) -> ModelTrainer:
         X, y = xy
         trainer = ModelTrainer(
-            n_trials=2, cv_folds=2, n_jobs=1,
-            search_space=["linear"], mlflow_cfg=None,
+            n_trials=2,
+            cv_folds=2,
+            n_jobs=1,
+            search_space=["linear"],
+            mlflow_cfg=None,
         )
         trainer.fit(X, y)
         return trainer
@@ -280,9 +280,7 @@ class TestModelRegistry:
         preds = loaded.predict(X)
         assert len(preds) == len(X)
 
-    def test_load_top_features(
-        self, tmp_path: Path, xy: tuple[pd.DataFrame, pd.Series]
-    ) -> None:
+    def test_load_top_features(self, tmp_path: Path, xy: tuple[pd.DataFrame, pd.Series]) -> None:
         trainer = self._make_fitted_trainer(xy)
         registry = ModelRegistry(model_dir=tmp_path)
         features = ["f0", "f2", "f4"]
@@ -290,9 +288,7 @@ class TestModelRegistry:
         loaded = registry.load_top_features()
         assert loaded == features
 
-    def test_load_metadata(
-        self, tmp_path: Path, xy: tuple[pd.DataFrame, pd.Series]
-    ) -> None:
+    def test_load_metadata(self, tmp_path: Path, xy: tuple[pd.DataFrame, pd.Series]) -> None:
         trainer = self._make_fitted_trainer(xy)
         registry = ModelRegistry(model_dir=tmp_path)
         registry.save(trainer)

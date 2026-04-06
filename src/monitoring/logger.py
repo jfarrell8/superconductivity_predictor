@@ -122,7 +122,7 @@ class PredictionLogger:
                 model_type=model_type,
                 n_features=n_features,
             )
-            for feat, pred in zip(feature_rows, predictions)
+            for feat, pred in zip(feature_rows, predictions, strict=False)
         ]
 
     @staticmethod
@@ -146,9 +146,7 @@ class PredictionLogger:
                 line = line.strip()
                 if line:
                     record = json.loads(line)
-                    flat = {
-                        k: v for k, v in record.items() if k != "features"
-                    }
+                    flat = {k: v for k, v in record.items() if k != "features"}
                     flat.update(record.get("features", {}))
                     records.append(flat)
 
@@ -165,6 +163,4 @@ class PredictionLogger:
             ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             rotated = self.sink.with_name(f"{self.sink.stem}_{ts}{self.sink.suffix}")
             self.sink.rename(rotated)
-            _loguru_logger.info(
-                f"Prediction log rotated: {rotated} ({size_mb:.1f} MB)"
-            )
+            _loguru_logger.info(f"Prediction log rotated: {rotated} ({size_mb:.1f} MB)")

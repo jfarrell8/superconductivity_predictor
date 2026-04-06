@@ -70,13 +70,12 @@ def input_fn(request_body: str | bytes, content_type: str) -> pd.DataFrame:
         return pd.DataFrame([data])
 
     if content_type == "text/csv":
-        return pd.read_csv(StringIO(
-            request_body if isinstance(request_body, str) else request_body.decode()
-        ))
+        return pd.read_csv(
+            StringIO(request_body if isinstance(request_body, str) else request_body.decode())
+        )
 
     raise ValueError(
-        f"Unsupported content type: {content_type}. "
-        "Use 'application/json' or 'text/csv'."
+        f"Unsupported content type: {content_type}. Use 'application/json' or 'text/csv'."
     )
 
 

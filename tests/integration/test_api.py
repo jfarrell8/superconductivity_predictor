@@ -10,9 +10,10 @@ artifacts, making them suitable for CI pipelines on every PR.
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -22,16 +23,24 @@ from src.api.app import app, app_state
 from src.models.trainer import ModelMetadata
 from src.monitoring.logger import PredictionLogger
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 
 MOCK_FEATURES = [
-    "mean_atomic_mass", "wtd_mean_atomic_mass", "gmean_atomic_mass",
-    "mean_fie", "mean_atomic_radius", "wtd_mean_atomic_radius",
-    "mean_Density", "wtd_mean_Density", "mean_ElectronAffinity",
-    "wtd_mean_ElectronAffinity", "mean_FusionHeat", "wtd_mean_FusionHeat",
-    "mean_ThermalConductivity", "wtd_mean_ThermalConductivity",
+    "mean_atomic_mass",
+    "wtd_mean_atomic_mass",
+    "gmean_atomic_mass",
+    "mean_fie",
+    "mean_atomic_radius",
+    "wtd_mean_atomic_radius",
+    "mean_Density",
+    "wtd_mean_Density",
+    "mean_ElectronAffinity",
+    "wtd_mean_ElectronAffinity",
+    "mean_FusionHeat",
+    "wtd_mean_FusionHeat",
+    "mean_ThermalConductivity",
+    "wtd_mean_ThermalConductivity",
     "num_elements_simplified",
 ]
 
@@ -64,9 +73,7 @@ def mock_app_state(tmp_path: Path) -> Generator[None, None, None]:
     app_state.metadata = MOCK_METADATA
     app_state.top_features = MOCK_FEATURES
     app_state.drift_monitor = None
-    app_state.prediction_logger = PredictionLogger(
-        sink=tmp_path / "test_predictions.jsonl"
-    )
+    app_state.prediction_logger = PredictionLogger(sink=tmp_path / "test_predictions.jsonl")
 
     yield
 
@@ -83,9 +90,7 @@ def client() -> TestClient:
 
 
 def _sample_payload() -> dict[str, Any]:
-    return {
-        "features": {feat: float(i + 1) for i, feat in enumerate(MOCK_FEATURES)}
-    }
+    return {"features": {feat: float(i + 1) for i, feat in enumerate(MOCK_FEATURES)}}
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
@@ -159,11 +164,7 @@ class TestPredictEndpoint:
         client.post("/predict", json=_sample_payload())
         assert app_state.prediction_logger is not None
         log_path = app_state.prediction_logger.sink
-        records = [
-            json.loads(line)
-            for line in log_path.read_text().splitlines()
-            if line.strip()
-        ]
+        records = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
         assert len(records) == 1
         assert "prediction" in records[0]
         assert "request_id" in records[0]
@@ -204,11 +205,7 @@ class TestBatchPredictEndpoint:
         client.post("/predict/batch", json=self._batch_payload(n))
         assert app_state.prediction_logger is not None
         log_path = app_state.prediction_logger.sink
-        records = [
-            json.loads(line)
-            for line in log_path.read_text().splitlines()
-            if line.strip()
-        ]
+        records = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
         assert len(records) == n
 
     def test_empty_samples_returns_422(self, client: TestClient) -> None:

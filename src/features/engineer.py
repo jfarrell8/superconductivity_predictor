@@ -17,7 +17,6 @@ is composable, testable, and easy to swap in/out.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -25,7 +24,6 @@ from loguru import logger
 from scipy import stats
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler
-
 
 # ─── Binning ─────────────────────────────────────────────────────────────────
 
@@ -56,7 +54,7 @@ class BinningTransformer:
     def __init__(self, configs: list[BinningConfig]) -> None:
         self.configs = configs
 
-    def fit(self, df: pd.DataFrame) -> "BinningTransformer":  # stateless
+    def fit(self, df: pd.DataFrame) -> BinningTransformer:  # stateless
         return self
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -97,7 +95,7 @@ class TargetTransformer:
     def __init__(self, source_column: str, output_column: str) -> None:
         self.source_column = source_column
         self.output_column = output_column
-        self._lambda: Optional[float] = None
+        self._lambda: float | None = None
 
     @property
     def fitted_lambda(self) -> float:
@@ -105,7 +103,7 @@ class TargetTransformer:
             raise RuntimeError("TargetTransformer has not been fitted yet.")
         return self._lambda
 
-    def fit(self, df: pd.DataFrame) -> "TargetTransformer":
+    def fit(self, df: pd.DataFrame) -> TargetTransformer:
         if (df[self.source_column] <= 0).any():
             raise ValueError(
                 f"Box-Cox requires strictly positive values. "
@@ -169,19 +167,15 @@ class FeaturePruner:
         self.dropped_correlation: list[str] = []
         self._fitted: bool = False
 
-    def fit(self, df: pd.DataFrame, target_column: str) -> "FeaturePruner":
+    def fit(self, df: pd.DataFrame, target_column: str) -> FeaturePruner:
         analysis_df = df.drop(
             columns=self.config.protected_columns + [target_column],
             errors="ignore",
         )
         corr_matrix = analysis_df.corr().abs()
-        upper = corr_matrix.where(
-            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-        )
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         self.dropped_correlation = [
-            col
-            for col in upper.columns
-            if any(upper[col] > self.config.correlation_threshold)
+            col for col in upper.columns if any(upper[col] > self.config.correlation_threshold)
         ]
         logger.info(
             f"FeaturePruner: {len(self.dropped_correlation)} columns flagged by "
@@ -194,9 +188,7 @@ class FeaturePruner:
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if not self._fitted:
             raise RuntimeError("Call fit() before transform().")
-        to_drop = list(
-            set(self.dropped_correlation + self.config.drop_columns) & set(df.columns)
-        )
+        to_drop = list(set(self.dropped_correlation + self.config.drop_columns) & set(df.columns))
         df = df.drop(columns=to_drop)
         logger.info(f"FeaturePruner: dropped {len(to_drop)} columns total.")
         return df
@@ -204,9 +196,7 @@ class FeaturePruner:
     def fit_transform(self, df: pd.DataFrame, target_column: str) -> pd.DataFrame:
         return self.fit(df, target_column).transform(df)
 
-    def mutual_info_ranking(
-        self, df: pd.DataFrame, target_column: str
-    ) -> pd.Series:
+    def mutual_info_ranking(self, df: pd.DataFrame, target_column: str) -> pd.Series:
         """
         Compute mutual information between every feature and the target.
         Useful for post-pruning diagnostics and final top-k selection.
@@ -233,7 +223,7 @@ class FeatureScaler:
         self._scaler = StandardScaler()
         self._scale_columns: list[str] = []
 
-    def fit(self, df: pd.DataFrame) -> "FeatureScaler":
+    def fit(self, df: pd.DataFrame) -> FeatureScaler:
         self._scale_columns = [c for c in df.columns if c not in self.skip_columns]
         self._scaler.fit(df[self._scale_columns])
         return self
@@ -287,7 +277,7 @@ class FeatureEngineer:
         self._fitted = False
 
     @classmethod
-    def from_config(cls, cfg: dict) -> "FeatureEngineer":
+    def from_config(cls, cfg: dict) -> FeatureEngineer:
         """Construct a FeatureEngineer from a parsed YAML config dict."""
         fe_cfg = cfg["feature_engineering"]
 
@@ -328,9 +318,7 @@ class FeatureEngineer:
             )
         )
 
-        scaler = FeatureScaler(
-            skip_columns=cfg["preprocessing"]["columns_to_skip_scaling"]
-        )
+        scaler = FeatureScaler(skip_columns=cfg["preprocessing"]["columns_to_skip_scaling"])
 
         return cls(
             binner=binner,
@@ -344,9 +332,7 @@ class FeatureEngineer:
             ],
         )
 
-    def fit_transform(
-        self, df: pd.DataFrame
-    ) -> tuple[pd.DataFrame, pd.Series]:
+    def fit_transform(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
         """Fit all transformers on df and return (X_scaled, y)."""
         logger.info("FeatureEngineer: starting fit_transform")
 
@@ -355,12 +341,8 @@ class FeatureEngineer:
 
         # 2. One-hot encode range_Valence (fitted during EDA; dropped later)
         if "rangeValence_simplified" in df.columns:
-            dummies = pd.get_dummies(
-                df["rangeValence_simplified"], prefix="rangeValence"
-            )
-            df = pd.concat(
-                [df.drop(columns=["rangeValence_simplified"]), dummies], axis=1
-            )
+            dummies = pd.get_dummies(df["rangeValence_simplified"], prefix="rangeValence")
+            df = pd.concat([df.drop(columns=["rangeValence_simplified"]), dummies], axis=1)
 
         # 3. Drop the original raw columns
         df.drop(columns=[c for c in self.drop_raw_columns if c in df.columns], inplace=True)
@@ -380,12 +362,11 @@ class FeatureEngineer:
 
         self._fitted = True
         logger.info(
-            f"FeatureEngineer: produced {X_scaled.shape[1]} features for "
-            f"{len(X_scaled):,} samples."
+            f"FeatureEngineer: produced {X_scaled.shape[1]} features for {len(X_scaled):,} samples."
         )
         return X_scaled, y
 
-    def transform(self, df: pd.DataFrame) -> tuple[pd.DataFrame, Optional[pd.Series]]:
+    def transform(self, df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series | None]:
         """Apply fitted transformations to new data (inference path)."""
         if not self._fitted:
             raise RuntimeError("Call fit_transform() before transform().")
@@ -393,16 +374,12 @@ class FeatureEngineer:
         df = self.binner.transform(df)
 
         if "rangeValence_simplified" in df.columns:
-            dummies = pd.get_dummies(
-                df["rangeValence_simplified"], prefix="rangeValence"
-            )
-            df = pd.concat(
-                [df.drop(columns=["rangeValence_simplified"]), dummies], axis=1
-            )
+            dummies = pd.get_dummies(df["rangeValence_simplified"], prefix="rangeValence")
+            df = pd.concat([df.drop(columns=["rangeValence_simplified"]), dummies], axis=1)
 
         df.drop(columns=[c for c in self.drop_raw_columns if c in df.columns], inplace=True)
 
-        y: Optional[pd.Series] = None
+        y: pd.Series | None = None
         if self.target_column.replace("_boxcox", "") in df.columns:
             # raw target present — transform it
             df = self.target_transformer.transform(df)

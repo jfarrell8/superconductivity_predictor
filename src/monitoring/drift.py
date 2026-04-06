@@ -23,7 +23,6 @@ import pandas as pd
 from loguru import logger
 from scipy import stats
 
-
 # ─── Report ───────────────────────────────────────────────────────────────────
 
 
@@ -60,10 +59,8 @@ class DriftReport:
         total = len(self.feature_results)
         n_drifted = len(self.drifted_features)
         status = "⚠️  DRIFT DETECTED" if self.drift_detected else "✅  No drift"
-        return (
-            f"{status} — {n_drifted}/{total} features exceed "
-            f"α={self.significance_level}\n"
-            + (f"Drifted: {self.drifted_features}" if n_drifted else "")
+        return f"{status} — {n_drifted}/{total} features exceed α={self.significance_level}\n" + (
+            f"Drifted: {self.drifted_features}" if n_drifted else ""
         )
 
 
@@ -105,9 +102,7 @@ class DriftMonitor:
         DriftReport
         """
         report = DriftReport(significance_level=self.significance_level)
-        shared_cols = [
-            c for c in self._numeric_columns if c in new_data.columns
-        ]
+        shared_cols = [c for c in self._numeric_columns if c in new_data.columns]
 
         if not shared_cols:
             logger.warning("No shared numeric columns found for drift detection.")

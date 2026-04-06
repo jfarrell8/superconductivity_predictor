@@ -17,11 +17,9 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
 from loguru import logger
-
 
 # ─── Schema definition ───────────────────────────────────────────────────────
 
@@ -47,7 +45,7 @@ class DataManifest:
         logger.info(f"Manifest written to {path}")
 
     @classmethod
-    def load(cls, path: Path) -> "DataManifest":
+    def load(cls, path: Path) -> DataManifest:
         data = json.loads(path.read_text())
         return cls(**data)
 
@@ -70,16 +68,16 @@ class DataLoader:
     def __init__(
         self,
         train_path: Path | str,
-        metadata_path: Optional[Path | str] = None,
+        metadata_path: Path | str | None = None,
     ) -> None:
         self.train_path = Path(train_path)
         self.metadata_path = Path(metadata_path) if metadata_path else None
-        self._train_df: Optional[pd.DataFrame] = None
-        self._metadata_df: Optional[pd.DataFrame] = None
+        self._train_df: pd.DataFrame | None = None
+        self._metadata_df: pd.DataFrame | None = None
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def load(self) -> "DataLoader":
+    def load(self) -> DataLoader:
         """Load both CSVs from disk, validate, and cache internally."""
         logger.info(f"Loading training data from {self.train_path}")
         self._train_df = self._read_csv(self.train_path)
@@ -99,7 +97,7 @@ class DataLoader:
         return self._train_df.copy()
 
     @property
-    def metadata(self) -> Optional[pd.DataFrame]:
+    def metadata(self) -> pd.DataFrame | None:
         """Return the metadata DataFrame if loaded."""
         return self._metadata_df.copy() if self._metadata_df is not None else None
 
