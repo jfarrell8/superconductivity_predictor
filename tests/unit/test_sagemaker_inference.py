@@ -52,6 +52,7 @@ SAMPLE_INPUT = {feat: float(i + 1.0) for i, feat in enumerate(TOP_FEATURES)}
 #     (tmp_path / "top_features.json").write_text(json.dumps(TOP_FEATURES))
 #     return tmp_path
 
+
 @pytest.fixture()
 def mock_model_dir(tmp_path: Path) -> Path:
     import joblib
@@ -156,9 +157,7 @@ class TestPredictFn:
         result = predict_fn(df, model_artifacts)
         assert isinstance(result, np.ndarray)
 
-    def test_extra_columns_do_not_cause_error(
-        self, model_artifacts: dict
-    ) -> None:
+    def test_extra_columns_do_not_cause_error(self, model_artifacts: dict) -> None:
         from src.api.sagemaker.inference import predict_fn
 
         extra = {**SAMPLE_INPUT, "extra_irrelevant_col": 999.0}
