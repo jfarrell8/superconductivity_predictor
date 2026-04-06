@@ -41,15 +41,31 @@ TOP_FEATURES = [
 SAMPLE_INPUT = {feat: float(i + 1.0) for i, feat in enumerate(TOP_FEATURES)}
 
 
+# @pytest.fixture()
+# def mock_model_dir(tmp_path: Path) -> Path:
+#     """Create a fake model directory with required files."""
+#     mock_model = MagicMock()
+#     mock_model.predict.return_value = np.array([4.312])
+
+#     import joblib
+
+#     joblib.dump(mock_model, tmp_path / "best_model_top15.pkl")
+#     (tmp_path / "top_features.json").write_text(json.dumps(TOP_FEATURES))
+#     return tmp_path
+
 @pytest.fixture()
 def mock_model_dir(tmp_path: Path) -> Path:
-    """Create a fake model directory with required files."""
-    mock_model = MagicMock()
-    mock_model.predict.return_value = np.array([4.312])
+    from sklearn.linear_model import LinearRegression
 
     import joblib
 
-    joblib.dump(mock_model, tmp_path / "best_model_top15.pkl")
+    # Use a real fitted model — MagicMock is not picklable
+    model = LinearRegression()
+    X = pd.DataFrame({feat: [1.0, 2.0, 3.0] for feat in TOP_FEATURES})
+    y = pd.Series([4.1, 4.5, 4.9])
+    model.fit(X, y)
+
+    joblib.dump(model, tmp_path / "best_model_top15.pkl")
     (tmp_path / "top_features.json").write_text(json.dumps(TOP_FEATURES))
     return tmp_path
 
