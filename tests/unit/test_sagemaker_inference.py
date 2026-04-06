@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -55,9 +54,8 @@ SAMPLE_INPUT = {feat: float(i + 1.0) for i, feat in enumerate(TOP_FEATURES)}
 
 @pytest.fixture()
 def mock_model_dir(tmp_path: Path) -> Path:
-    from sklearn.linear_model import LinearRegression
-
     import joblib
+    from sklearn.linear_model import LinearRegression
 
     # Use a real fitted model — MagicMock is not picklable
     model = LinearRegression()
