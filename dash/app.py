@@ -215,7 +215,12 @@ def serve_layout() -> html.Div:
                                             "marginTop": "4px",
                                         },
                                     ),
-                                    html.Div(id="prediction-result", style={"marginTop": "16px"}),
+
+                                    dcc.Loading(
+                                        id="loading-prediction",
+                                        type="circle",
+                                        children=html.Div(id="prediction-result", style={"marginTop": "16px"})
+                                    ),
                                 ],
                                 style=CARD_STYLE,
                             )
