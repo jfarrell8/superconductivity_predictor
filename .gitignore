@@ -34,6 +34,9 @@ mlruns/
 !models/model_metadata.json
 !models/feature_medians.json
 
+# Allow processed reference data for deployment
+!data/processed/train_reduced.csv
+
 # Test / coverage
 .coverage
 htmlcov/
