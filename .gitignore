@@ -27,9 +27,12 @@ models/*.joblib
 models/*.tar.gz
 mlartifacts/
 mlruns/
-# Metadata files are small and committed:
+
+# Allow model artifacts for deployment
+!models/best_model_top15.pkl
 !models/top_features.json
 !models/model_metadata.json
+!models/feature_medians.json
 
 # Test / coverage
 .coverage
