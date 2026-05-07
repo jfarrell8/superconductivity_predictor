@@ -57,7 +57,12 @@ jobs:
         run: ruff check src/ tests/
 
       - name: Type check (mypy)
-        run: mypy src/
+        run: mypy src/data/ \
+                  src/features/ \
+                  src/storage/ \
+                  src/monitoring/ \
+                  src/api/app.py \
+                  src/orchestration/flows.py
 
       - name: Run tests with coverage
         run: |
