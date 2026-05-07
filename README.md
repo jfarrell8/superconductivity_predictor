@@ -3,7 +3,8 @@
 > End-to-end, production-grade ML system for predicting the critical temperature
 > of superconducting materials — from raw data through Prefect-orchestrated
 > training, MLflow experiment tracking, DVC data versioning, and a live
-> inference API with drift monitoring, all provisioned with Terraform.
+> inference API with drift monitoring, all provisioned with Terraform and
+> deployed to AWS SageMaker via GitHub Actions CI/CD.
 
 [![Tests](https://github.com/jfarrell8/superconductivity_predictor/actions/workflows/test.yml/badge.svg)](https://github.com/jfarrell8/superconductivity_predictor/actions/workflows/test.yml)
 [![Lint](https://github.com/jfarrell8/superconductivity_predictor/actions/workflows/lint.yml/badge.svg)](https://github.com/jfarrell8/superconductivity_predictor/actions/workflows/lint.yml)
@@ -57,6 +58,13 @@ electron count. These descriptors are standard across materials ML benchmarks
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
+│  CLOUD (AWS — spin up on demand, ~$0.06/hour)                   │
+│                                                                 │
+│  Dash dashboard  →  FastAPI (Render)  →  SageMaker endpoint     │
+│  ECR (Docker)  ·  S3 (artifacts)  ·  CloudWatch (monitoring)   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
 │  LOCAL DEV STACK  (docker compose --profile full up)            │
 │                                                                 │
 │  :8000  FastAPI inference  │  :5000  MLflow UI                  │
@@ -64,10 +72,10 @@ electron count. These descriptors are standard across materials ML benchmarks
 └─────────────────────────────────────────────────────────────────┘
 
 Training:    Prefect flow  →  MLflow tracking  →  S3 artifacts
-Serving:     FastAPI (dev / Render)  /  SageMaker endpoint (prod)
+Serving:     FastAPI (Render)  /  SageMaker endpoint (AWS, on demand)
 Versioning:  DVC (data + models) backed by S3
-Infra:       Terraform  →  S3 + IAM + SageMaker + CloudWatch
-CI/CD:       GitHub Actions  →  OIDC auth (no stored AWS keys)
+Infra:       Terraform  →  S3 + IAM + ECR + SageMaker + CloudWatch
+CI/CD:       GitHub Actions  →  OIDC auth  →  ECR + S3 + SageMaker
 ```
 
 ---
@@ -82,7 +90,7 @@ superconductivity_predictor/
 │   ├── models/             ModelTrainer  — Optuna HPO + MLflow tracking
 │   ├── evaluation/         ModelEvaluator  — metrics, SHAP, reduction sweep
 │   ├── api/
-│   │   ├── app.py          FastAPI inference service
+│   │   ├── app.py          FastAPI inference service (local + SageMaker paths)
 │   │   └── sagemaker/      inference.py  — SageMaker container entry point
 │   ├── monitoring/         DriftMonitor (KS-test) + PredictionLogger (JSONL)
 │   ├── orchestration/      Prefect flow  — 6 tasks, retries, cron schedule
@@ -90,6 +98,9 @@ superconductivity_predictor/
 ├── dash/
 │   ├── app.py              Dash demo dashboard (3 panels)
 │   └── requirements.txt    dash, plotly, requests, gunicorn
+├── docker/
+│   ├── sagemaker_serve.py  Flask app for SageMaker custom container
+│   └── serve               Shell entrypoint for SageMaker container
 ├── tests/
 │   ├── unit/               140+ isolated tests, moto S3 mocks
 │   └── integration/        FastAPI endpoint tests with mocked model state
@@ -102,9 +113,8 @@ superconductivity_predictor/
 │   ├── run_flow.py         Prefect flow CLI (local or deployed)
 │   ├── run_pipeline.py     Lightweight script (no Prefect server needed)
 │   └── download_data.py    UCI dataset downloader
-├── dvc.yaml                DVC pipeline stages
-├── prefect.yaml            Prefect deployment manifest (2 deployments)
-├── Dockerfile              Multi-stage build (builder → slim runtime)
+├── Dockerfile              FastAPI app container
+├── Dockerfile.sagemaker    SageMaker inference container (sklearn 1.7.2)
 ├── docker-compose.yml      Full local stack (API + MLflow + MinIO + Prefect)
 └── .github/workflows/      lint / test / build / deploy  (4 workflows)
 ```
@@ -118,6 +128,7 @@ superconductivity_predictor/
 - Python 3.10+
 - Docker + Docker Compose (for full local stack)
 - AWS CLI configured (for S3/SageMaker features — optional for local dev)
+- Terraform >= 1.7 (for cloud deployment — optional)
 
 ### 1. Install
 
@@ -194,14 +205,120 @@ API_BASE_URL=http://localhost:8000 python app.py
 # Open http://localhost:8050
 ```
 
-### 7. Deploy infrastructure (AWS)
+---
 
-```bash
-cd infra/terraform/environments/dev
-terraform init && terraform apply
+## Cloud Deployment (AWS SageMaker)
+
+The SageMaker endpoint is kept offline to avoid hosting costs but can be
+spun up in under 15 minutes for a live demo. All infrastructure is defined
+as code in `infra/terraform/` and all deployment is automated via GitHub
+Actions.
+
+### Architecture
+
+```
+GitHub push → test.yml → build.yml → deploy.yml
+                ↓              ↓            ↓
+             pytest        Docker      model.tar.gz
+             mypy           image    ─────────────→ SageMaker
+             ruff        ─────────→                 endpoint
+                            ECR
 ```
 
-See [infra/README.md](infra/README.md) for the full infrastructure guide.
+**What Terraform provisions:**
+
+| Resource | Purpose |
+|---|---|
+| S3 buckets (×2) | Model artifacts + training data |
+| ECR repository | Docker images for SageMaker container |
+| IAM roles (×3) | SageMaker execution, GitHub OIDC deploy, Prefect worker |
+| SageMaker endpoint | `ml.t2.medium` inference endpoint |
+| CloudWatch alarms | p99 latency > 500ms, 5xx errors > 5/min |
+
+**OIDC authentication** — no AWS credentials stored in GitHub Secrets.
+GitHub's OIDC JWT is exchanged for short-lived STS credentials at deploy
+time via an assumed IAM role.
+
+### Spin up for a demo (~15 min, ~$0.06/hour)
+
+**Step 1 — Recreate the SageMaker endpoint:**
+```bash
+cd infra/terraform/environments/dev
+terraform apply
+```
+
+**Step 2 — Add environment variables to the Render `sc-predictor-api` service:**
+```
+SAGEMAKER_ENDPOINT     = sc-predictor-dev-endpoint
+AWS_ACCESS_KEY_ID      = <your IAM user access key>
+AWS_SECRET_ACCESS_KEY  = <your IAM user secret key>
+AWS_DEFAULT_REGION     = us-east-1
+```
+
+**Step 3 — Manually redeploy `sc-predictor-api` on Render.**
+
+Predictions now route: `Dash → FastAPI (Render) → SageMaker (AWS)`.
+
+### Tear down after demo
+
+```bash
+# Delete the endpoint — stops all charges immediately
+aws sagemaker delete-endpoint \
+  --endpoint-name sc-predictor-dev-endpoint \
+  --region us-east-1
+```
+
+Then remove the four environment variables from Render and redeploy.
+The API automatically falls back to the local model when
+`SAGEMAKER_ENDPOINT` is unset.
+
+**Free resources** (keep running, ~$0/month):
+S3 buckets, IAM roles, ECR repository, CloudWatch log groups.
+
+### Bootstrap from scratch
+
+If setting up the cloud infrastructure for the first time:
+
+```bash
+# 1. Create Terraform state backend (once per AWS account)
+aws s3api create-bucket --bucket sc-predictor-tfstate-dev --region us-east-1
+aws s3api put-bucket-versioning \
+  --bucket sc-predictor-tfstate-dev \
+  --versioning-configuration Status=Enabled
+aws dynamodb create-table \
+  --table-name sc-predictor-tfstate-lock \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region us-east-1
+
+# 2. Provision all AWS resources
+cd infra/terraform/environments/dev
+terraform init && terraform apply
+
+# 3. Add GitHub Secrets (Settings → Secrets → Actions)
+#    AWS_CICD_ROLE_ARN  =  terraform output cicd_deploy_role_arn
+#    ARTIFACTS_BUCKET   =  terraform output artifacts_bucket_name
+
+# 4. Build and push the SageMaker container
+docker build -f Dockerfile.sagemaker -t sc-predictor-sagemaker .
+ECR_URL=$(terraform output -raw ecr_repository_url)
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin $(echo $ECR_URL | cut -d'/' -f1)
+docker tag sc-predictor-sagemaker:latest $ECR_URL:sagemaker
+docker push $ECR_URL:sagemaker
+
+# 5. Upload model artifacts to S3
+mkdir -p /tmp/sm_model
+cp models/best_model_top15.pkl models/top_features.json \
+   src/api/sagemaker/inference.py /tmp/sm_model/
+tar -czf models/best_model_top15.tar.gz -C /tmp/sm_model .
+aws s3 cp models/best_model_top15.tar.gz \
+  s3://sc-predictor-artifacts-dev-jfarrell/models/best_model_top15.tar.gz
+
+# 6. Push to main — CI/CD handles everything from here
+git push origin main
+```
 
 ---
 
@@ -279,7 +396,9 @@ tc_kelvin = inv_boxcox(predicted_boxcox, fitted_lambda)
 | **Median imputation at inference** | Training set medians saved to `feature_medians.json`. Missing features are filled automatically at inference time — partial inputs are accepted gracefully. |
 | **Fit/transform protocol** | Every transformer follows sklearn's fit/transform interface — individually testable, composable, and serialisable. No leakage between train and test. |
 | **StorageBackend abstraction** | One config line switches local↔S3. Unit tests use `LocalBackend`; CI uses `moto`; production uses `S3Backend`. |
+| **Dual serving paths** | FastAPI conditionally routes to SageMaker when `SAGEMAKER_ENDPOINT` is set, falling back to local model otherwise. Same API contract either way — zero client-side changes. |
 | **OIDC for CI/CD** | No `AWS_ACCESS_KEY_ID` stored in GitHub Secrets. GitHub's OIDC JWT is exchanged for short-lived STS credentials via an assumed IAM role. |
+| **Custom SageMaker container** | Built with sklearn 1.7.2 to match training environment. Uses Flask `/ping` + `/invocations` pattern for SageMaker's custom container protocol. |
 | **Manual production gate** | Models auto-promote to MLflow `Staging` if RMSE improves. `Staging→Production` requires explicit human approval — intentional safety gate. |
 
 ---
@@ -327,7 +446,7 @@ green/red status per feature.
 ```bash
 # One-time setup
 dvc init
-dvc remote add -d s3remote s3://sc-predictor-artifacts/dvc-cache
+dvc remote add -d s3remote s3://sc-predictor-artifacts-dev-jfarrell/dvc-cache
 dvc remote modify s3remote region us-east-1
 
 # Track a new data version
