@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-# Builds and pushes Docker image to Amazon ECR on merge to main.
+# Builds and pushes Docker image to Amazon ECR on merge to main only.
 # Uses OIDC federation — no AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY stored.
 
 name: Build
@@ -7,11 +7,10 @@ name: Build
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 env:
   AWS_REGION: us-east-1
+  ECR_REPOSITORY: sc-predictor-dev   # matches ECR repo name from Terraform
 
 jobs:
   build:
@@ -38,9 +37,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.ref == 'refs/heads/main' }}
+          push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/superconductivity-predictor:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/superconductivity-predictor:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

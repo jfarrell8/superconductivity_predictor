@@ -1,48 +1,66 @@
 # infra/terraform/modules/sagemaker/main.tf
-# ─────────────────────────────────────────────────────────────────────────────
-# SageMaker module: training job definition, model package group,
-# real-time inference endpoint, and optional data capture.
-#
-# Design choices
-# ──────────────
-# • Model Package Group: every trained model is registered here so you
-#   have a full registry with approval workflow before production promotion.
-# • Endpoint Config: uses DataCaptureConfig in prod so every prediction is
-#   logged to S3 — feeds back into the drift monitor.
-# • Auto Scaling: endpoint scales between min/max instances based on
-#   InvocationsPerInstance CloudWatch metric.
-# ─────────────────────────────────────────────────────────────────────────────
 
-variable "project_name"            { type = string }
-variable "environment"             { type = string }
-variable "execution_role_arn"      { type = string }
-variable "artifacts_bucket_id"     { type = string }
-variable "aws_region"              { type = string; default = "us-east-1" }
-variable "training_instance_type"  { type = string; default = "ml.m5.large" }
-variable "endpoint_instance_type"  { type = string; default = "ml.t2.medium" }
-variable "endpoint_instance_count" { type = number; default = 1 }
-variable "enable_data_capture"     { type = bool;   default = false }
-variable "data_capture_bucket"     { type = string; default = "" }
-variable "data_capture_prefix"     { type = string; default = "endpoint-captures" }
+variable "project_name" {
+  type = string
+}
 
-# AWS-managed account IDs for built-in SageMaker containers (region-specific).
-# Source: https://docs.aws.amazon.com/sagemaker/latest/dg/pre-built-containers-frameworks-deep-learning.html
+variable "environment" {
+  type = string
+}
+
+variable "execution_role_arn" {
+  type = string
+}
+
+variable "artifacts_bucket_id" {
+  type = string
+}
+
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "training_instance_type" {
+  type    = string
+  default = "ml.m5.large"
+}
+
+variable "endpoint_instance_type" {
+  type    = string
+  default = "ml.t2.medium"
+}
+
+variable "endpoint_instance_count" {
+  type    = number
+  default = 1
+}
+
+variable "enable_data_capture" {
+  type    = bool
+  default = false
+}
+
+variable "data_capture_bucket" {
+  type    = string
+  default = ""
+}
+
+variable "data_capture_prefix" {
+  type    = string
+  default = "endpoint-captures"
+}
+
 variable "container_image" {
   type        = string
   default     = ""
-  description = <<-EOT
-    Container image URI for inference. Leave empty to use the AWS-managed
-    scikit-learn image for the configured aws_region.
-    Override with your ECR image URI when using a custom container.
-  EOT
+  description = "Container image URI. Leave empty to use the AWS-managed sklearn image."
 }
 
 locals {
-  name_prefix        = "${var.project_name}-${var.environment}"
+  name_prefix         = "${var.project_name}-${var.environment}"
   model_package_group = "${local.name_prefix}-models"
 
-  # AWS-managed SageMaker scikit-learn container account IDs per region.
-  # These are stable public account IDs maintained by AWS.
   sklearn_account_map = {
     "us-east-1"      = "683313688378"
     "us-east-2"      = "257758044811"
@@ -53,14 +71,13 @@ locals {
     "ap-southeast-1" = "627065512975"
     "ap-northeast-1" = "354813040037"
   }
+
   sklearn_account = lookup(local.sklearn_account_map, var.aws_region, "683313688378")
 
-  resolved_container_image = var.container_image != "" ? var.container_image : (
-    "${local.sklearn_account}.dkr.ecr.${var.aws_region}.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3"
-  )
+  resolved_container_image = var.container_image != "" ? var.container_image : "${local.sklearn_account}.dkr.ecr.${var.aws_region}.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3"
 }
 
-# ── CloudWatch log group ──────────────────────────────────────────────────────
+# ── CloudWatch log groups ─────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_log_group" "sagemaker_training" {
   name              = "/aws/sagemaker/TrainingJobs/${local.name_prefix}"
@@ -72,29 +89,21 @@ resource "aws_cloudwatch_log_group" "sagemaker_endpoint" {
   retention_in_days = var.environment == "prod" ? 90 : 14
 }
 
-# ── SageMaker Model Package Group ────────────────────────────────────────────
-# This is the model registry — models trained via MLflow are also registered
-# here for production approval workflow.
+# ── Model Package Group ───────────────────────────────────────────────────────
 
 resource "aws_sagemaker_model_package_group" "main" {
   model_package_group_name        = local.model_package_group
   model_package_group_description = "Superconductivity TC predictor models — ${var.environment}"
 }
 
-# ── SageMaker Model (references the latest approved artifact) ────────────────
-# In practice this is updated by CI/CD after a successful training run.
-# The container uses the scikit-learn built-in image for lightweight serving.
+# ── SageMaker Model ───────────────────────────────────────────────────────────
 
 resource "aws_sagemaker_model" "predictor" {
   name               = "${local.name_prefix}-predictor"
   execution_role_arn = var.execution_role_arn
 
   primary_container {
-    # AWS-managed scikit-learn container. Region-specific account ID is
-    # resolved from local.sklearn_account_map. Override container_image
-    # variable to use a custom ECR image instead.
-    image = local.resolved_container_image
-
+    image          = local.resolved_container_image
     model_data_url = "s3://${var.artifacts_bucket_id}/models/best_model_top15.tar.gz"
 
     environment = {
@@ -104,7 +113,6 @@ resource "aws_sagemaker_model" "predictor" {
   }
 
   lifecycle {
-    # Prevent destruction of the model resource when updating — create new, then destroy old
     create_before_destroy = true
   }
 }
@@ -132,6 +140,7 @@ resource "aws_sagemaker_endpoint_configuration" "main" {
       capture_options {
         capture_mode = "Input"
       }
+
       capture_options {
         capture_mode = "Output"
       }
@@ -154,15 +163,12 @@ resource "aws_sagemaker_endpoint" "main" {
   endpoint_config_name = aws_sagemaker_endpoint_configuration.main.name
 
   lifecycle {
-    # Zero-downtime updates: create new endpoint config, then update endpoint
     create_before_destroy = true
-    ignore_changes        = [endpoint_config_name]  # managed by CI/CD, not Terraform
+    ignore_changes        = [endpoint_config_name]
   }
 }
 
-# ── Auto Scaling ──────────────────────────────────────────────────────────────
-# Scale between 1-4 instances based on requests-per-instance.
-# Only enabled in prod (dev keeps it simple).
+# ── Auto Scaling (prod only) ──────────────────────────────────────────────────
 
 resource "aws_appautoscaling_target" "endpoint" {
   count              = var.environment == "prod" ? 1 : 0
@@ -182,7 +188,7 @@ resource "aws_appautoscaling_policy" "endpoint_scaling" {
   service_namespace  = aws_appautoscaling_target.endpoint[0].service_namespace
 
   target_tracking_scaling_policy_configuration {
-    target_value       = 1000  # invocations per instance per minute
+    target_value       = 1000
     scale_in_cooldown  = 300
     scale_out_cooldown = 60
 
@@ -201,8 +207,8 @@ resource "aws_cloudwatch_metric_alarm" "endpoint_latency" {
   metric_name         = "ModelLatency"
   namespace           = "AWS/SageMaker"
   period              = 60
-  statistic           = "p99"
-  threshold           = 500  # 500ms p99 latency threshold
+  extended_statistic  = "p99"
+  threshold           = 500
   alarm_description   = "Endpoint p99 latency exceeded 500ms"
   treat_missing_data  = "notBreaching"
 
@@ -231,6 +237,14 @@ resource "aws_cloudwatch_metric_alarm" "endpoint_errors" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "endpoint_name"         { value = aws_sagemaker_endpoint.main.name }
-output "model_package_group"   { value = aws_sagemaker_model_package_group.main.model_package_group_name }
-output "endpoint_config_name"  { value = aws_sagemaker_endpoint_configuration.main.name }
+output "endpoint_name" {
+  value = aws_sagemaker_endpoint.main.name
+}
+
+output "model_package_group" {
+  value = aws_sagemaker_model_package_group.main.model_package_group_name
+}
+
+output "endpoint_config_name" {
+  value = aws_sagemaker_endpoint_configuration.main.name
+}

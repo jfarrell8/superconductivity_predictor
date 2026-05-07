@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/ml/code
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    numpy pandas scipy \
+    "scikit-learn==1.7.2" \
+    xgboost lightgbm \
+    joblib \
+    flask \
+    gunicorn
+
+COPY src/api/sagemaker/inference.py /opt/ml/code/inference.py
+COPY docker/sagemaker_serve.py /opt/ml/code/serve.py
+COPY docker/serve /usr/local/bin/serve
+
+RUN chmod +x /usr/local/bin/serve
+
+EXPOSE 8080
+
+ENV PYTHONPATH=/opt/ml/code
+
+CMD ["serve"]

@@ -1,38 +1,56 @@
 # infra/terraform/modules/s3/main.tf
-# ─────────────────────────────────────────────────────────────────────────────
-# S3 module: two buckets (data + artifacts) with versioning, encryption,
-# lifecycle rules, and optional cross-region replication.
-#
-# Security defaults:
-#   • Block all public access
-#   • SSE-S3 encryption at rest
-#   • Versioning enabled (required for DVC and model rollback)
-#   • Lifecycle rule: transition artifacts to Intelligent-Tiering after 30 days
-# ─────────────────────────────────────────────────────────────────────────────
 
-variable "project_name"            { type = string }
-variable "environment"             { type = string }
-variable "log_retention_days"      { type = number; default = 30 }
-variable "artifact_retention_days" { type = number; default = 90 }
-variable "enable_replication"      { type = bool;   default = false }
-variable "replica_region"          { type = string; default = "us-west-2" }
+variable "project_name" {
+  type = string
+}
+
+variable "environment" {
+  type = string
+}
+
+variable "bucket_suffix" {
+  type    = string
+  default = ""
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 30
+}
+
+variable "artifact_retention_days" {
+  type    = number
+  default = 90
+}
+
+variable "enable_replication" {
+  type    = bool
+  default = false
+}
+
+variable "replica_region" {
+  type    = string
+  default = "us-west-2"
+}
 
 locals {
-  artifacts_bucket = "${var.project_name}-artifacts-${var.environment}"
-  data_bucket      = "${var.project_name}-data-${var.environment}"
+  suffix           = var.bucket_suffix != "" ? "-${var.bucket_suffix}" : ""
+  artifacts_bucket = "${var.project_name}-artifacts-${var.environment}${local.suffix}"
+  data_bucket      = "${var.project_name}-data-${var.environment}${local.suffix}"
 }
 
 # ── Artifacts bucket ──────────────────────────────────────────────────────────
-# Stores: trained models (.pkl), Optuna studies, feature lists, manifests
 
 resource "aws_s3_bucket" "artifacts" {
   bucket        = local.artifacts_bucket
-  force_destroy = var.environment == "dev"   # safe to destroy in dev only
+  force_destroy = var.environment == "dev"
 }
 
 resource "aws_s3_bucket_versioning" "artifacts" {
   bucket = aws_s3_bucket.artifacts.id
-  versioning_configuration { status = "Enabled" }
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "artifacts" {
@@ -58,8 +76,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
   rule {
     id     = "transition-to-intelligent-tiering"
     status = "Enabled"
-    filter { prefix = "models/" }
-
+    filter {
+      prefix = "models/"
+    }
     transition {
       days          = 30
       storage_class = "INTELLIGENT_TIERING"
@@ -69,12 +88,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
   rule {
     id     = "expire-old-experiment-artifacts"
     status = "Enabled"
-    filter { prefix = "experiments/" }
-
+    filter {
+      prefix = "experiments/"
+    }
     expiration {
       days = var.artifact_retention_days
     }
-
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
@@ -82,7 +101,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
 }
 
 # ── Data bucket ───────────────────────────────────────────────────────────────
-# Stores: raw CSVs, processed feature CSVs, DVC cache
 
 resource "aws_s3_bucket" "data" {
   bucket        = local.data_bucket
@@ -91,13 +109,17 @@ resource "aws_s3_bucket" "data" {
 
 resource "aws_s3_bucket_versioning" "data" {
   bucket = aws_s3_bucket.data.id
-  versioning_configuration { status = "Enabled" }
+  versioning_configuration {
+    status = "Enabled"
+  }
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
   bucket = aws_s3_bucket.data.id
   rule {
-    apply_server_side_encryption_by_default { sse_algorithm = "AES256" }
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
   }
 }
 
@@ -109,7 +131,7 @@ resource "aws_s3_bucket_public_access_block" "data" {
   restrict_public_buckets = true
 }
 
-# ── Optional: cross-region replication (prod only) ───────────────────────────
+# ── Optional cross-region replication (prod only) ────────────────────────────
 
 resource "aws_s3_bucket_replication_configuration" "artifacts" {
   count  = var.enable_replication ? 1 : 0
@@ -119,8 +141,9 @@ resource "aws_s3_bucket_replication_configuration" "artifacts" {
   rule {
     id     = "replicate-models"
     status = "Enabled"
-    filter { prefix = "models/" }
-
+    filter {
+      prefix = "models/"
+    }
     destination {
       bucket        = "arn:aws:s3:::${local.artifacts_bucket}-replica"
       storage_class = "STANDARD_IA"
@@ -170,7 +193,18 @@ resource "aws_iam_role_policy" "replication" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "artifacts_bucket_id"  { value = aws_s3_bucket.artifacts.id }
-output "artifacts_bucket_arn" { value = aws_s3_bucket.artifacts.arn }
-output "data_bucket_id"       { value = aws_s3_bucket.data.id }
-output "data_bucket_arn"      { value = aws_s3_bucket.data.arn }
+output "artifacts_bucket_id" {
+  value = aws_s3_bucket.artifacts.id
+}
+
+output "artifacts_bucket_arn" {
+  value = aws_s3_bucket.artifacts.arn
+}
+
+output "data_bucket_id" {
+  value = aws_s3_bucket.data.id
+}
+
+output "data_bucket_arn" {
+  value = aws_s3_bucket.data.arn
+}

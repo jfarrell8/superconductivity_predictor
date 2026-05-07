@@ -1,23 +1,30 @@
 # infra/terraform/modules/iam/main.tf
-# ─────────────────────────────────────────────────────────────────────────────
-# IAM module: least-privilege roles for every principal in the system.
-#
-# Roles created
-# ─────────────
-# sagemaker_execution_role  — assumed by SageMaker training jobs and endpoints.
-#                             Grants: S3 read/write on specific prefixes,
-#                             CloudWatch Logs write, ECR pull.
-# cicd_deploy_role          — assumed by GitHub Actions OIDC to deploy
-#                             (no long-lived AWS keys in CI secrets).
-# prefect_task_role         — assumed by ECS Fargate tasks running Prefect workers.
-# ─────────────────────────────────────────────────────────────────────────────
 
-variable "project_name"         { type = string }
-variable "environment"          { type = string }
-variable "artifacts_bucket_arn" { type = string }
-variable "data_bucket_arn"      { type = string }
-variable "github_org"           { type = string; default = "your-github-org" }
-variable "github_repo"          { type = string; default = "superconductivity-predictor" }
+variable "project_name" {
+  type = string
+}
+
+variable "environment" {
+  type = string
+}
+
+variable "artifacts_bucket_arn" {
+  type = string
+}
+
+variable "data_bucket_arn" {
+  type = string
+}
+
+variable "github_org" {
+  type    = string
+  default = "jfarrell8"
+}
+
+variable "github_repo" {
+  type    = string
+  default = "superconductivity_predictor"
+}
 
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
@@ -80,18 +87,17 @@ resource "aws_iam_role_policy_attachment" "sagemaker_ecr" {
 }
 
 # ── GitHub Actions OIDC deploy role ──────────────────────────────────────────
-# No long-lived secrets: GitHub's OIDC provider issues a short-lived JWT
-# that STS exchanges for temporary AWS credentials.
 
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
-
-  client_id_list = ["sts.amazonaws.com"]
-
-  # GitHub's OIDC thumbprint (stable)
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 resource "aws_iam_role" "cicd_deploy" {
@@ -137,9 +143,9 @@ resource "aws_iam_role_policy" "cicd_deploy_s3" {
         ]
       },
       {
-        Sid      = "UpdateEndpoint"
-        Effect   = "Allow"
-        Action   = [
+        Sid    = "UpdateEndpoint"
+        Effect = "Allow"
+        Action = [
           "sagemaker:UpdateEndpoint",
           "sagemaker:DescribeEndpoint",
           "sagemaker:CreateEndpointConfig",
@@ -151,7 +157,7 @@ resource "aws_iam_role_policy" "cicd_deploy_s3" {
   })
 }
 
-# ── Prefect worker role (ECS Fargate) ─────────────────────────────────────────
+# ── Prefect worker role ───────────────────────────────────────────────────────
 
 resource "aws_iam_role" "prefect_worker" {
   name = "${local.name_prefix}-prefect-worker"
@@ -176,8 +182,10 @@ resource "aws_iam_role_policy" "prefect_worker_s3" {
       Effect = "Allow"
       Action = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
       Resource = [
-        var.data_bucket_arn, "${var.data_bucket_arn}/*",
-        var.artifacts_bucket_arn, "${var.artifacts_bucket_arn}/*"
+        var.data_bucket_arn,
+        "${var.data_bucket_arn}/*",
+        var.artifacts_bucket_arn,
+        "${var.artifacts_bucket_arn}/*"
       ]
     }]
   })
@@ -190,6 +198,14 @@ resource "aws_iam_role_policy_attachment" "prefect_ecs" {
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
-output "sagemaker_execution_role_arn" { value = aws_iam_role.sagemaker_execution.arn }
-output "cicd_deploy_role_arn"         { value = aws_iam_role.cicd_deploy.arn }
-output "prefect_worker_role_arn"      { value = aws_iam_role.prefect_worker.arn }
+output "sagemaker_execution_role_arn" {
+  value = aws_iam_role.sagemaker_execution.arn
+}
+
+output "cicd_deploy_role_arn" {
+  value = aws_iam_role.cicd_deploy.arn
+}
+
+output "prefect_worker_role_arn" {
+  value = aws_iam_role.prefect_worker.arn
+}

@@ -13,7 +13,7 @@ terraform {
     }
   }
 
-  # Remote state — swap bucket/key for your account
+  # Remote state — bucket created manually during bootstrap
   backend "s3" {
     bucket         = "sc-predictor-tfstate-dev"
     key            = "superconductivity/dev/terraform.tfstate"
@@ -53,16 +53,16 @@ module "ecr" {
   source       = "../../modules/ecr"
   project_name = var.project_name
   environment  = "dev"
-  max_images   = 10   # dev: keep fewer images to save storage costs
+  max_images   = 10
 }
 
 # ── S3 module ─────────────────────────────────────────────────────────────────
 
 module "s3" {
-  source       = "../../modules/s3"
-  project_name = var.project_name
-  environment  = "dev"
-  # Dev: shorter retention, no replication
+  source        = "../../modules/s3"
+  project_name  = var.project_name
+  environment   = "dev"
+  bucket_suffix = "jfarrell"   # makes bucket names globally unique
   log_retention_days      = 30
   artifact_retention_days = 90
   enable_replication      = false
@@ -71,11 +71,13 @@ module "s3" {
 # ── IAM module ────────────────────────────────────────────────────────────────
 
 module "iam" {
-  source          = "../../modules/iam"
-  project_name    = var.project_name
-  environment     = "dev"
+  source               = "../../modules/iam"
+  project_name         = var.project_name
+  environment          = "dev"
   artifacts_bucket_arn = module.s3.artifacts_bucket_arn
   data_bucket_arn      = module.s3.data_bucket_arn
+  github_org           = "jfarrell8"
+  github_repo          = "superconductivity_predictor"
 }
 
 # ── SageMaker module ──────────────────────────────────────────────────────────
@@ -87,13 +89,11 @@ module "sagemaker" {
   execution_role_arn   = module.iam.sagemaker_execution_role_arn
   artifacts_bucket_id  = module.s3.artifacts_bucket_id
   aws_region           = var.aws_region
-  # Dev: smaller instance, single AZ
   training_instance_type  = "ml.m5.large"
   endpoint_instance_type  = "ml.t2.medium"
   endpoint_instance_count = 1
   enable_data_capture     = false
-  # Uncomment to use the custom ECR image instead of the built-in sklearn container:
-  # container_image = "${module.ecr.repository_url}:latest"
+  container_image         = "${module.ecr.repository_url}:sagemaker"
 }
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ output "ecr_repository_url" {
 
 output "artifacts_bucket_name" {
   value       = module.s3.artifacts_bucket_id
-  description = "S3 bucket for ML artifacts"
+  description = "S3 bucket for ML artifacts — use as ARTIFACTS_BUCKET GitHub Secret"
 }
 
 output "sagemaker_endpoint_name" {
@@ -116,4 +116,9 @@ output "sagemaker_endpoint_name" {
 output "training_role_arn" {
   value       = module.iam.sagemaker_execution_role_arn
   description = "IAM role ARN for SageMaker training jobs"
+}
+
+output "cicd_deploy_role_arn" {
+  value       = module.iam.cicd_deploy_role_arn
+  description = "Add this as AWS_CICD_ROLE_ARN in GitHub Secrets"
 }
