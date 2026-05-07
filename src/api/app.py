@@ -16,6 +16,7 @@ GET  /monitoring/logs         — summary statistics from the prediction log
 
 from __future__ import annotations
 
+import os
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -36,13 +37,25 @@ from src.monitoring.logger import PredictionLogger
 # ─── Application settings ─────────────────────────────────────────────────────
 
 
+# class Settings(BaseModel):
+#     model_dir: str = "models"
+#     model_filename: str = "best_model_top15.pkl"
+#     reference_data_path: str = "data/processed/train_reduced.csv"
+#     drift_significance_level: float = 0.05
+#     prediction_log_path: str = "logs/predictions.jsonl"
+#     prediction_log_max_mb: float = 100.0
+
 class Settings(BaseModel):
     model_dir: str = "models"
     model_filename: str = "best_model_top15.pkl"
     reference_data_path: str = "data/processed/train_reduced.csv"
     drift_significance_level: float = 0.05
-    prediction_log_path: str = "logs/predictions.jsonl"
+    prediction_log_path: str = os.environ.get(
+        "PREDICTION_LOG_PATH", "logs/predictions.jsonl"
+    )
     prediction_log_max_mb: float = 100.0
+    sagemaker_endpoint: str = os.environ.get("SAGEMAKER_ENDPOINT", "")
+    aws_region: str = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
 
 settings = Settings()
@@ -258,8 +271,27 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
             )
 
     try:
+        # X = pd.DataFrame([imputed])[features]
+        # prediction = float(app_state.model.predict(X)[0])
         X = pd.DataFrame([imputed])[features]
-        prediction = float(app_state.model.predict(X)[0])
+
+        if settings.sagemaker_endpoint:
+            import boto3
+            import json as _json
+            sm_client = boto3.client(
+                "sagemaker-runtime",
+                region_name=settings.aws_region
+            )
+            response = sm_client.invoke_endpoint(
+                EndpointName=settings.sagemaker_endpoint,
+                ContentType="application/json",
+                Body=_json.dumps({"features": imputed})
+            )
+            prediction = float(
+                _json.loads(response["Body"].read())["predictions"][0]
+            )
+        else:
+            prediction = float(app_state.model.predict(X)[0])
     except Exception as exc:
         logger.error(f"Prediction error: {exc}")
         raise HTTPException(
