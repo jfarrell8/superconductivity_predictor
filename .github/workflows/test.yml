@@ -9,6 +9,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_call:
 
 jobs:
   test:
@@ -46,7 +47,7 @@ jobs:
       - name: Install dev and test tools
         run: |
           pip install pytest pytest-cov pytest-asyncio anyio
-          pip install ruff mypy pandas-stubs types-PyYAML
+          pip install ruff "mypy==1.9.0" pandas-stubs types-PyYAML
           pip install "moto[s3]>=5.0"
 
       - name: Install package
