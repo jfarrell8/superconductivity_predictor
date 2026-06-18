@@ -250,8 +250,8 @@ terraform apply
 **Step 2 — Add environment variables to the Render `sc-predictor-api` service:**
 ```
 SAGEMAKER_ENDPOINT     = sc-predictor-dev-endpoint
-AWS_ACCESS_KEY_ID      = <your IAM user access key>
-AWS_SECRET_ACCESS_KEY  = <your IAM user secret key>
+AWS_ACCESS_KEY_ID      = <IAM user access key>
+AWS_SECRET_ACCESS_KEY  = <IAM user secret key>
 AWS_DEFAULT_REGION     = us-east-1
 ```
 
